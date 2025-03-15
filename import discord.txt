@@ -1,0 +1,48 @@
+import discord
+from discord.ext import commands
+import os
+from dotenv import load_dotenv
+import logging
+from utils.shop_data import ShopData
+from cogs.stock_commands import StockCommands
+from cogs.admin_commands import AdminCommands
+from cogs.webhook_handler import WebhookHandler
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("discord_bot")
+
+# Load environment variables
+load_dotenv('.env')
+TOKEN = os.getenv('BOT_TOKEN')
+STOCK_CHANNEL_ID = int(os.getenv('STOCK_CHANNEL_ID', 0))
+
+# Bot setup
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+shop_data = ShopData()
+
+async def setup():
+    await bot.add_cog(StockCommands(bot))
+    await bot.add_cog(AdminCommands(bot))
+    await bot.add_cog(WebhookHandler(bot))
+
+@bot.event
+async def on_ready():
+    logger.info(f"🤖 Logged in as {bot.user}")
+    await setup()
+    # ... rest of your on_ready code
+
+if __name__ == "__main__":
+    try:
+        logger.info("🚀 Starting bot...")
+        bot.run(TOKEN)
+    except Exception as e:
+        logger.error(f"❌ Failed to start bot: {e}")
+    finally:
+        shop_data.save_data()

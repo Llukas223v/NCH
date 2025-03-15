@@ -1,0 +1,22 @@
+[
+    {
+        "action_type": "addstock",
+        "details": "luk223v added 1500 Bizarre Bud for 2555.0 each.",
+        "timestamp": "2025-03-10 22:23:10.532646"
+    },
+    {
+        "action_type": "sell",
+        "details": "Sold 122 Bizarre Bud. Total: 299500.0.",
+        "timestamp": "2025-03-10 22:23:17.536129"
+    },
+    {
+        "action_type": "requestpayout",
+        "details": "luk223v requested a payout of 299500.0.",
+        "timestamp": "2025-03-10 22:23:28.778949"
+    },
+    {
+        "action_type": "requestpayout",
+        "details": "luk223v requested a payout of 16087178.0.",
+        "timestamp": "2025-03-10 22:32:08.517984"
+    }
+]
