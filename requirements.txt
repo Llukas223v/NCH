@@ -1,3 +1,17 @@
 discord.py>=2.0.1
 python-dotenv
 PyNaCl
+aiohttp
+async-timeout
+attrs
+yarl
+multidict
+idna
+chardet
+typing-extensions
+python-dateutil
+pytz
+requests
+urllib3
+certifi
+six
