@@ -10,10 +10,7 @@ import logging
 import asyncio
 from typing import Dict, List, Optional, Union, Any, Literal
 import traceback
-try:
-    import nacl  # For voice support
-except ImportError:
-    logger.warning("PyNaCl not installed. Voice features will be unavailable.")
+import nacl  # Add this for voice support
 import aiohttp
 import re
 from pymongo import MongoClient
@@ -1868,44 +1865,35 @@ async def help_cmd(interaction: discord.Interaction):
     is_admin_user = await is_admin(interaction)
     
     embed = discord.Embed(
-        title="🏪 Shop Commands",
+        title="🏪 Shop Bot Commands",
+        description="Here's everything you can do with this shop management bot:",
         color=COLORS['INFO']
     )
     
-    # Basic user commands
-    user_commands = [
-        "`/quickadd` Quick add items using category buttons",
-        "`/quickremove` Quick remove items using buttons",
-        "`/add` Add items to your stock",
-        "`/remove` Remove items from your stock",
-        "`/stock` View current inventory levels by category",
-        "`/earnings` Check your current earnings",
-        "`/payout` Cash out your earnings"
-    ]
-    
-    template_commands = [
-        "`/template create` Create a new template",
-        "`/template use` Apply a saved template to add multiple items",
-        "`/template list` View your saved templates",
-        "`/template delete` Delete a template"
-    ]
-    
-    admin_commands = [
-        "`/setstock` Set quantity for an item (for any user)",
-        "`/clearstock` Clear stock for specific items or users",
-        "`/sellmanual` Process a sale manually",
-        "`/price` Change an item's price",
-        "`/userinfo` View detailed info about any user",
-        "`/history` View transaction history",
-        "`/analytics` View shop analytics and trends",
-        "`/backup` Create a backup of shop data"
+    # Stock Management Commands
+    stock_commands = [
+        "`/quickadd` - Add items using category buttons",
+        "`/add` - Add items to your stock (with quantity)",
+        "`/stock` - View current inventory by category",
+        "`/quickremove` - Remove items using buttons",
+        "`/remove` - Remove items from your stock (with quantity)",
+        "`/bulkadd2` - Add multiple items visually",
+        "`/bulkremove` - Remove multiple items at once"
     ]
     
     embed.add_field(
         name="📦 Stock Management",
-        value="\n".join(user_commands),
+        value="\n".join(stock_commands),
         inline=False
     )
+    
+    # Template System Commands
+    template_commands = [
+        "`/template create` - Create a new template",
+        "`/template use` - Apply a saved template to add items",
+        "`/template list` - View your saved templates",
+        "`/template delete` - Delete a template"
+    ]
     
     embed.add_field(
         name="📋 Template System",
@@ -1913,7 +1901,31 @@ async def help_cmd(interaction: discord.Interaction):
         inline=False
     )
     
+    # Financial Commands
+    finance_commands = [
+        "`/earnings` - Check your current earnings",
+        "`/payout` - Cash out your earnings"
+    ]
+    
+    embed.add_field(
+        name="💰 Financial",
+        value="\n".join(finance_commands),
+        inline=False
+    )
+    
+    # Admin Commands (only shown to admins)
     if is_admin_user:
+        admin_commands = [
+            "`/setstock` - Set exact quantity for any user",
+            "`/clearstock` - Clear stock for specific items/users",
+            "`/sellmanual` - Process a sale manually",
+            "`/price` - Change an item's price",
+            "`/userinfo` - View detailed info about any user",
+            "`/history` - View transaction history",
+            "`/analytics` - View shop analytics and trends",
+            "`/backup` - Create a backup of shop data"
+        ]
+        
         embed.add_field(
             name="⚙️ Admin Commands",
             value="\n".join(admin_commands),
@@ -1921,11 +1933,11 @@ async def help_cmd(interaction: discord.Interaction):
         )
     
     embed.add_field(
-        name="💡 Quick Tips",
-        value="• Tab complete for item names\n"
-              "• Use templates for regular restocking\n"
-              "• Check `/stock` for low inventory warnings\n"
-              "• Use `/quickadd` for the fastest restocking experience",
+        name="💡 Tips",
+        value="• Use tab completion for item names\n"
+              "• Templates are great for regular restocking\n"
+              "• `/stock` shows low inventory warnings\n"
+              "• MongoDB integration ensures your data is safe",
         inline=False
     )
     
