@@ -10,7 +10,10 @@ import logging
 import asyncio
 from typing import Dict, List, Optional, Union, Any, Literal
 import traceback
-import nacl  # Add this for voice support
+try:
+    import nacl  # For voice support
+except ImportError:
+    logger.warning("PyNaCl not installed. Voice features will be unavailable.")
 import aiohttp
 import re
 from pymongo import MongoClient
