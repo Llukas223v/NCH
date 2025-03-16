@@ -12,6 +12,31 @@ from typing import Dict, List, Optional, Union, Any
 import traceback
 import nacl  # Add this for voice support
 from typing import Dict, List, Optional, Union, Any, Literal
+import pymongo
+from pymongo import MongoClient
+import re  # Add this since you use re.split and re.match
+
+
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("discord_bot")
+
+# Check if we have a MongoDB URI (for Railway deployment)
+MONGO_URI = os.getenv("MONGO_URI")
+if MONGO_URI:
+    logger.info("🔌 Connecting to MongoDB...")
+    mongo_client = MongoClient(MONGO_URI)
+    db = mongo_client["shop_bot"]
+    using_mongodb = True
+else:
+    logger.info("💾 Using local JSON storage")
+    using_mongodb = False
+
 
 
 class ItemView(discord.ui.View):
@@ -1132,6 +1157,12 @@ class ShopData:
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
+                if "predefined_prices" in data:
+                    logger.info(f"Found saved prices: {data['predefined_prices']}")
+                    old_prices = self.predefined_prices.copy()
+                    self.predefined_prices.update(data["predefined_prices"])
+                    logger.info(f"Updated prices from: {old_prices}")
+                    logger.info(f"Updated prices to: {self.predefined_prices}")            
                 self.items.update(data.get("items", {}))
                 self.user_earnings.update(data.get("earnings", {}))
                 if "sale_history" in data:
@@ -1232,6 +1263,23 @@ class ShopData:
             self.user_preferences[user] = {}
         self.user_preferences[user][preference] = value
         self.save_data()  # Save preferences immediately
+    def add_item(self, item_name: str, quantity: int, user: str) -> bool:
+        """Add an item to stock"""
+        price = self.predefined_prices.get(item_name, 0)
+        date = str(datetime.date.today())
+    
+        if item_name not in self.items:
+            self.items[item_name] = []
+        
+        self.items[item_name].append({
+            "person": user,
+            "quantity": quantity,
+            "date": date,
+            "price": price
+        })
+    
+        return True    
+        
         
     
 shop_data = ShopData()
@@ -2491,7 +2539,9 @@ async def change_price(
     
     # Save changes
     shop_data.save_data()
-    await update_stock_message()
+    
+    # Update stock message without waiting
+    asyncio.create_task(update_stock_message())
     
     # Build response embed
     embed = discord.Embed(
@@ -2533,7 +2583,8 @@ async def change_price(
         str(interaction.user)
     )
     
-    await interaction.response.send_message(embed=embed, ephemeral=True)  
+    # Respond to the interaction
+    await interaction.response.send_message(embed=embed, ephemeral=True)
             
 @bot.tree.command(name="analytics")
 async def analytics(interaction: discord.Interaction):
@@ -2740,26 +2791,6 @@ async def on_message(message):
 
     await bot.process_commands(message)
     
-@bot.event
-async def on_ready():
-    """Called when the bot is ready"""
-    logger.info(f"🤖 Logged in as {bot.user}")
-    try:
-        # Load saved data
-        shop_data.load_data()
-        shop_data.load_config()
-        
-        # Sync commands
-        synced = await bot.tree.sync()
-        logger.info(f"✅ Synced {len(synced)} commands")
-        
-        # Update stock display
-        await update_stock_message()
-        logger.info("✅ Initial stock message updated")
-        
-    except Exception as e:
-        logger.error(f"❌ Error during startup: {e}")
-        logger.error(traceback.format_exc())
 
 async def main():
     try:
@@ -2775,3 +2806,57 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
+@bot.event
+async def on_ready():
+    """Called when the bot is ready"""
+    logger.info(f"🤖 Logged in as {bot.user}")
+    
+    try:
+        # Load configuration first
+        shop_data.load_config()
+        
+        # If using MongoDB and deploying for first time, migrate data
+        if using_mongodb and os.path.exists(DATA_FILE):
+            try:
+                # Check if we already have data in MongoDB
+                has_mongo_data = db.items.count_documents({}) > 0 or db.settings.count_documents({}) > 0
+                
+                if not has_mongo_data:
+                    logger.info("🔄 Migrating local data to MongoDB...")
+                    
+                    # Load from local JSON first
+                    with open(DATA_FILE, "r") as f:
+                        data = json.load(f)
+                    
+                    # Then save to MongoDB
+                    for item_name, entries in data.get("items", {}).items():
+                        db.items.update_one(
+                            {"_id": item_name},
+                            {"$set": {"entries": entries}},
+                            upsert=True
+                        )
+                    
+                    # Migrate other collections
+                    if "predefined_prices" in data:
+                        db.settings.update_one(
+                            {"_id": "predefined_prices"},
+                            {"$set": {"data": data["predefined_prices"]}},
+                            upsert=True
+                        )
+                    
+                    # Similar for other data types...
+                    
+                    logger.info("✅ Data migration complete")
+                    
+            except Exception as e:
+                logger.error(f"❌ Data migration error: {e}")
+        
+        # Now load data normally (from MongoDB or JSON)
+        shop_data.load_data()
+        
+        # Continue with the rest of your on_ready function...
+        
+    except Exception as e:
+        logger.error(f"❌ Error during startup: {e}")
+        logger.error(traceback.format_exc())    
