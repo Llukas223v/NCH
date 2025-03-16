@@ -8,36 +8,21 @@ import os
 from dotenv import load_dotenv
 import logging
 import asyncio
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, Literal
 import traceback
 import nacl  # Add this for voice support
-from typing import Dict, List, Optional, Union, Any, Literal
-import pymongo
+import aiohttp
+import re
 from pymongo import MongoClient
-import re  # Add this since you use re.split and re.match
+import pymongo
 
+# Define intents first
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True  # If you need member events
 
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger("discord_bot")
-
-# Check if we have a MongoDB URI (for Railway deployment)
-MONGO_URI = os.getenv("MONGO_URI")
-if MONGO_URI:
-    logger.info("🔌 Connecting to MongoDB...")
-    mongo_client = MongoClient(MONGO_URI)
-    db = mongo_client["shop_bot"]
-    using_mongodb = True
-else:
-    logger.info("💾 Using local JSON storage")
-    using_mongodb = False
-
-
+# Simple bot setup
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 class ItemView(discord.ui.View):
     def __init__(self, category: str):
@@ -1058,8 +1043,30 @@ class ShopData:
         self.user_earnings: Dict[str, int] = {}
         self.sale_history: List[Dict[str, Any]] = []
         self.stock_message_id: Optional[int] = None
-        self.user_templates: Dict[str, Dict[str, Dict[str, int]]] = {}  # Added this line
+        self.user_templates: Dict[str, Dict[str, Dict[str, int]]] = {}
         self.user_preferences: Dict[str, Dict[str, Any]] = {}
+    
+    # Add MongoDB connection
+        self.using_mongodb = False
+        mongo_uri = os.getenv("MONGO_URI")
+        if mongo_uri:
+            try:
+                logger.info("🔌 Connecting to MongoDB...")
+                self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+                # Test connection
+                self.mongo_client.server_info()
+                self.db = self.mongo_client["shop_bot"]
+                self.using_mongodb = True
+                logger.info("✅ Connected to MongoDB successfully")
+            except pymongo.errors.ServerSelectionTimeoutError as e:
+                logger.error(f"❌ MongoDB connection failed: {e}")
+                logger.info("💾 Falling back to local JSON storage")
+            except Exception as e:
+                logger.error(f"❌ MongoDB error: {e}")
+                logger.info("💾 Falling back to local JSON storage")
+        else:
+            logger.info("💾 Using local JSON storage (no MONGO_URI provided)")
+        
         self.display_names = {
             'bud_sojokush': 'Bizarre Bud',
             'bud_khalifakush': 'Strange Bud',
@@ -1139,6 +1146,58 @@ class ShopData:
         self.item_list = list(self.predefined_prices.keys())
     
     def save_data(self) -> None:
+        if self.using_mongodb:
+            try:
+                # Save items collection
+                for item_name, entries in self.items.items():
+                    self.db.items.update_one(
+                        {"_id": item_name},
+                        {"$set": {"entries": entries}},
+                        upsert=True
+                    )
+            
+            # Save settings
+                self.db.settings.update_one(
+                    {"_id": "predefined_prices"},
+                    {"$set": {"data": self.predefined_prices}},
+                    upsert=True
+                )
+                self.db.settings.update_one(
+                    {"_id": "user_earnings"},
+                    {"$set": {"data": self.user_earnings}},
+                    upsert=True
+                )
+                self.db.settings.update_one(
+                    {"_id": "user_templates"},
+                    {"$set": {"data": self.user_templates}},
+                    upsert=True
+                )
+                self.db.settings.update_one(
+                    {"_id": "user_preferences"},
+                    {"$set": {"data": self.user_preferences}},
+                    upsert=True
+                )
+            
+                # For sale history, limit to recent entries
+                recent_history = self.sale_history[-500:]  # Keep last 500 entries
+                self.db.settings.update_one(
+                    {"_id": "sale_history"},
+                    {"$set": {"data": recent_history}},
+                    upsert=True
+                )
+            
+                logger.info("💾 Data saved to MongoDB")
+            except Exception as e:
+                logger.error(f"❌ MongoDB save error: {e}")
+                logger.error(traceback.format_exc())
+                # Fall back to local storage
+                self._save_local()
+        else:
+            # Use local storage
+            self._save_local()
+        
+    def _save_local(self) -> None:
+        """Save data to local JSON file"""
         try:
             with open(DATA_FILE, "w") as f:
                 json.dump({
@@ -1147,13 +1206,51 @@ class ShopData:
                     "sale_history": self.sale_history,
                     "user_templates": self.user_templates,
                     "predefined_prices": self.predefined_prices,
-                    "user_preferences": self.user_preferences  # Added this line
+                    "user_preferences": self.user_preferences
                 }, f, indent=2)
             logger.info("💾 Data saved to data.json")
         except Exception as e:
             logger.error(f"❌ Error saving data: {e}")
-
     def load_data(self) -> None:
+        if self.using_mongodb:
+            try:
+                # Load items
+                for item_doc in self.db.items.find():
+                    if "entries" in item_doc:
+                        self.items[item_doc["_id"]] = item_doc["entries"]
+            
+                # Load settings
+                prices_doc = self.db.settings.find_one({"_id": "predefined_prices"})
+                if prices_doc and "data" in prices_doc:
+                    self.predefined_prices.update(prices_doc["data"])
+            
+                earnings_doc = self.db.settings.find_one({"_id": "user_earnings"})
+                if earnings_doc and "data" in earnings_doc:
+                    self.user_earnings.update(earnings_doc["data"])
+                
+                templates_doc = self.db.settings.find_one({"_id": "user_templates"})
+                if templates_doc and "data" in templates_doc:
+                    self.user_templates.update(templates_doc["data"])
+                
+                prefs_doc = self.db.settings.find_one({"_id": "user_preferences"})
+                if prefs_doc and "data" in prefs_doc:
+                    self.user_preferences.update(prefs_doc["data"])
+                
+                history_doc = self.db.settings.find_one({"_id": "sale_history"})
+                if history_doc and "data" in history_doc:
+                 self.sale_history = history_doc["data"]
+            
+                logger.info("📂 Data loaded from MongoDB")
+            except Exception as e:
+                logger.error(f"❌ MongoDB load error: {e}")
+                logger.error(traceback.format_exc())
+                # Fall back to local storage
+                self._load_local()
+        else:
+            # Use local storage
+            self._load_local()       
+    def _load_local(self) -> None:
+        """Load data from local JSON file"""
         try:
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
@@ -1173,13 +1270,14 @@ class ShopData:
                     self.predefined_prices.update(data["predefined_prices"])
                 if "user_preferences" in data:
                     self.user_preferences.update(data["user_preferences"])
-            logger.info("📂 Data loaded successfully")
+            logger.info("📂 Data loaded from local file")
         except FileNotFoundError:
             logger.info("📝 No existing data found. Starting fresh.")
         except json.JSONDecodeError:
             logger.error("❌ Corrupted data file. Starting fresh.")
         except Exception as e:
-            logger.error(f"❌ Error loading data: {e}")
+            logger.error(f"❌ Error loading local data: {e}")
+            logger.error(traceback.format_exc())
     
     def load_config(self) -> None:
         """Load configuration from config.json"""
@@ -1213,6 +1311,52 @@ class ShopData:
         if item_name not in self.items:
             return 0
         return sum(entry['quantity'] for entry in self.items[item_name] if entry['person'] == user)
+    
+    def get_all_items(self):
+        """Return all valid item names"""
+        return self.item_list
+
+    def add_item(self, item_name: str, quantity: int, user: str) -> bool:
+        """Add an item to stock"""
+        price = self.predefined_prices.get(item_name, 0)
+        date = str(datetime.date.today())
+    
+        if item_name not in self.items:
+            self.items[item_name] = []
+    
+        self.items[item_name].append({
+            "person": user,
+            "quantity": quantity,
+            "date": date,
+            "price": price
+        })
+    
+        return True
+
+    def remove_item(self, item_name: str, quantity: int, user: str) -> bool:
+        """Remove an item from stock"""
+        if item_name not in self.items:
+            return False
+        
+        # Remove the stock
+        removed = 0
+        for entry in self.items[item_name]:
+            if entry['person'] == user:
+                if entry['quantity'] <= quantity - removed:
+                    removed += entry['quantity']
+                    entry['quantity'] = 0
+                else:
+                    entry['quantity'] -= (quantity - removed)
+                    removed = quantity
+                    break
+
+        # Clean up empty entries
+        self.items[item_name] = [
+            entry for entry in self.items[item_name] 
+            if entry['quantity'] > 0
+        ]
+    
+        return removed == quantity
     
     def is_valid_item(self, item_name: str) -> bool:
         """Check if an item is valid"""
@@ -1263,23 +1407,6 @@ class ShopData:
             self.user_preferences[user] = {}
         self.user_preferences[user][preference] = value
         self.save_data()  # Save preferences immediately
-    def add_item(self, item_name: str, quantity: int, user: str) -> bool:
-        """Add an item to stock"""
-        price = self.predefined_prices.get(item_name, 0)
-        date = str(datetime.date.today())
-    
-        if item_name not in self.items:
-            self.items[item_name] = []
-        
-        self.items[item_name].append({
-            "person": user,
-            "quantity": quantity,
-            "date": date,
-            "price": price
-        })
-    
-        return True    
-        
         
     
 shop_data = ShopData()
@@ -1646,6 +1773,83 @@ async def add_large_quantity(interaction: discord.Interaction, quantity: int, no
         )
     await interaction.response.send_message(embed=embed, ephemeral=True)
     return True
+
+async def migrate_local_to_mongodb():
+    """Migrate data from local JSON to MongoDB"""
+    try:
+        # Check if local data exists
+        if os.path.exists(DATA_FILE):
+            logger.info("🔄 Migrating local data to MongoDB...")
+            
+            # Load local data
+            with open(DATA_FILE, "r") as f:
+                data = json.load(f)
+            
+            # Connect to MongoDB if not already connected
+            if not shop_data.using_mongodb:
+                mongo_uri = os.getenv("MONGO_URI")
+                if not mongo_uri:
+                    logger.error("❌ No MongoDB URI provided for migration")
+                    return False
+                    
+                shop_data.mongo_client = MongoClient(mongo_uri)
+                shop_data.db = shop_data.mongo_client["shop_bot"]
+                shop_data.using_mongodb = True
+            
+            # Import items
+            if "items" in data:
+                for item_name, entries in data["items"].items():
+                    shop_data.db.items.update_one(
+                        {"_id": item_name},
+                        {"$set": {"entries": entries}},
+                        upsert=True
+                    )
+                    
+            # Import settings
+            if "predefined_prices" in data:
+                shop_data.db.settings.update_one(
+                    {"_id": "predefined_prices"},
+                    {"$set": {"data": data["predefined_prices"]}},
+                    upsert=True
+                )
+                
+            if "earnings" in data:
+                shop_data.db.settings.update_one(
+                    {"_id": "user_earnings"},
+                    {"$set": {"data": data["earnings"]}},
+                    upsert=True
+                )
+                
+            if "user_templates" in data:
+                shop_data.db.settings.update_one(
+                    {"_id": "user_templates"},
+                    {"$set": {"data": data["user_templates"]}},
+                    upsert=True
+                )
+                
+            if "user_preferences" in data:
+                shop_data.db.settings.update_one(
+                    {"_id": "user_preferences"},
+                    {"$set": {"data": data["user_preferences"]}},
+                    upsert=True
+                )
+                
+            if "sale_history" in data:
+                shop_data.db.settings.update_one(
+                    {"_id": "sale_history"},
+                    {"$set": {"data": data["sale_history"]}},
+                    upsert=True
+                )
+                
+            logger.info("✅ Local data successfully migrated to MongoDB")
+            return True
+        else:
+            logger.info("⚠️ No local data file found for migration")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Migration failed: {e}")
+        logger.error(traceback.format_exc())
+        return False
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -2791,72 +2995,63 @@ async def on_message(message):
 
     await bot.process_commands(message)
     
+@bot.event
+async def on_ready():
+    """Called when the bot is ready"""
+    logger.info(f"🤖 Logged in as {bot.user}")
+    try:
+        # Load saved data
+        shop_data.load_config()
+        
+        # Try to sync commands
+        try:
+            synced = await bot.tree.sync()
+            logger.info(f"✅ Synced {len(synced)} commands")
+        except Exception as e:
+            logger.error(f"❌ Failed to sync commands: {e}")
+            logger.error(traceback.format_exc())
+        
+        # Update stock display
+        try:
+            if hasattr(shop_data, 'stock_message_id') and shop_data.stock_message_id:
+                await update_stock_message()
+        except Exception as e:
+            logger.error(f"❌ Failed to update stock message: {e}")
+            logger.error(traceback.format_exc())
+        
+        logger.info("✅ Bot is ready!")
+        
+    except Exception as e:
+        logger.error(f"❌ Error during startup: {e}")
+        logger.error(traceback.format_exc())
 
 async def main():
     try:
+        # Load shop data before connecting
+        shop_data.load_data()
+        shop_data.load_config()
+        await migrate_local_to_mongodb()
+
+        logger.info("Starting bot...")
         await bot.start(TOKEN)
     except KeyboardInterrupt:
         logger.info("Shutdown requested via keyboard interrupt")
     except asyncio.CancelledError:
         logger.info("Shutdown requested via task cancellation")
+    except discord.LoginFailure:
+        logger.critical("❌ Invalid token! Please check your TOKEN in .env")
+    except Exception as e:
+        logger.error(f"Error during bot execution: {e}")
+        logger.error(traceback.format_exc())
     finally:
         if not bot.is_closed():
             await bot.close()
         logger.info("Bot has been shut down")
+ 
+# Just before the if __name__ == "__main__" line
+logger.info("Script initialized, preparing to connect to Discord...")
 
 if __name__ == "__main__":
-    asyncio.run(main())
-    
-@bot.event
-async def on_ready():
-    """Called when the bot is ready"""
-    logger.info(f"🤖 Logged in as {bot.user}")
-    
-    try:
-        # Load configuration first
-        shop_data.load_config()
+    logger.info("Starting async main function...")
+    asyncio.run(main()) 
         
-        # If using MongoDB and deploying for first time, migrate data
-        if using_mongodb and os.path.exists(DATA_FILE):
-            try:
-                # Check if we already have data in MongoDB
-                has_mongo_data = db.items.count_documents({}) > 0 or db.settings.count_documents({}) > 0
-                
-                if not has_mongo_data:
-                    logger.info("🔄 Migrating local data to MongoDB...")
-                    
-                    # Load from local JSON first
-                    with open(DATA_FILE, "r") as f:
-                        data = json.load(f)
-                    
-                    # Then save to MongoDB
-                    for item_name, entries in data.get("items", {}).items():
-                        db.items.update_one(
-                            {"_id": item_name},
-                            {"$set": {"entries": entries}},
-                            upsert=True
-                        )
-                    
-                    # Migrate other collections
-                    if "predefined_prices" in data:
-                        db.settings.update_one(
-                            {"_id": "predefined_prices"},
-                            {"$set": {"data": data["predefined_prices"]}},
-                            upsert=True
-                        )
-                    
-                    # Similar for other data types...
-                    
-                    logger.info("✅ Data migration complete")
-                    
-            except Exception as e:
-                logger.error(f"❌ Data migration error: {e}")
-        
-        # Now load data normally (from MongoDB or JSON)
-        shop_data.load_data()
-        
-        # Continue with the rest of your on_ready function...
-        
-    except Exception as e:
-        logger.error(f"❌ Error during startup: {e}")
-        logger.error(traceback.format_exc())    
