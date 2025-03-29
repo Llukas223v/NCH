@@ -1,7 +1,1 @@
-__pycache__/
-*.py[cod]
-*$py.class
 .env
-data.json
-logs/
-*.log
