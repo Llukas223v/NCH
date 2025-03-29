@@ -757,15 +757,31 @@ class TemplateNameModal(discord.ui.Modal):
         
         # Create empty template and store in current session
         user = str(interaction.user)
-        template_items = {}  # Will be populated as user adds items
         
-        # Save initial empty template
-        shop_data.save_template(user, template_name, template_items)
+        # Initialize the visual category view
+        template_view = TemplateVisualCategoryView(template_name)
+        template_view.user = user
         
-        # Show category selection for adding items
+        # Create initial embed
+        embed = discord.Embed(
+            title=f"📋 New Template: {template_name}",
+            description="Select categories and add items to your template.",
+            color=COLORS['INFO']
+        )
+        
+        embed.add_field(
+            name="Instructions",
+            value="1. Click on a category button\n"
+                  "2. Select items and set quantities\n"
+                  "3. Return to this menu with the Back button\n"
+                  "4. Click 'Finish Template' when done",
+            inline=False
+        )
+        
         await interaction.response.send_message(
-            f"Template **{template_name}** created! Select categories to add items:",
-            view=TemplateCategoryView(template_name),
+            content=f"Creating template: **{template_name}**",
+            embed=embed,
+            view=template_view,
             ephemeral=True
         )
 
@@ -937,13 +953,343 @@ class TemplateDeleteView(discord.ui.View):
                 ephemeral=True
             )
 
+class TemplateVisualCategoryView(discord.ui.View):
+    def __init__(self, template_name):
+        super().__init__(timeout=180)
+        self.template_name = template_name
+        self.selected_items = {}  # Track selected items and quantities
+        
+    @discord.ui.button(label="🥦 Buds", style=discord.ButtonStyle.green, row=0)
+    async def buds_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.show_category_items(interaction, 'bud')
+
+    @discord.ui.button(label="🚬 Joints", style=discord.ButtonStyle.blurple, row=0)
+    async def joints_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.show_category_items(interaction, 'joint')
+
+    @discord.ui.button(label="🛍️ Bags", style=discord.ButtonStyle.gray, row=1)
+    async def bags_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.show_category_items(interaction, 'bag')
+        
+    @discord.ui.button(label="💎 Tebex", style=discord.ButtonStyle.primary, row=1)
+    async def tebex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.show_category_items(interaction, 'tebex')
+    
+    @discord.ui.button(label="✅ Finish Template", style=discord.ButtonStyle.success, row=2)
+    async def finish_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.save_template(interaction)
+
+    async def show_category_items(self, interaction: discord.Interaction, category: str):
+        # First, create updated embed showing current selections
+        embed = self.create_current_selection_embed()
+    
+        # Now create the category items view
+        item_view = TemplateVisualItemView(self.template_name, category, self.selected_items)
+    
+        # Use edit_message instead of send_message to update the current message
+        await interaction.response.edit_message(
+            content=f"Select items from **{category.title()}** to add to template:",
+            embed=embed,
+            view=item_view
+        )
+        
+    def create_current_selection_embed(self):
+        """Create an embed showing current template selections"""
+        embed = discord.Embed(
+            title=f"📋 Template: {self.template_name}",
+            description="Items selected for this template:",
+            color=COLORS['INFO']
+        )
+        
+        # Get the items from the actual template (for existing templates)
+        user_templates = shop_data.user_templates.get(self.user, {})
+        template = user_templates.get(self.template_name, {})
+        
+        # Combine with currently selected items
+        all_items = {}
+        all_items.update(template)  # Start with existing items
+        all_items.update(self.selected_items)  # Override with new selections
+        
+        if not all_items:
+            embed.description = "No items selected yet."
+            return embed
+        
+        # Group by category
+        by_category = {}
+        total_value = 0
+        
+        for item, qty in all_items.items():
+            if qty <= 0:
+                continue
+                
+            category = shop_data.get_category_for_item(item)
+            if category not in by_category:
+                by_category[category] = []
+            
+            price = shop_data.predefined_prices.get(item, 0)
+            value = qty * price
+            total_value += value
+            
+            display_name = shop_data.display_names.get(item, item)
+            by_category[category].append(f"{display_name}: {qty:,} (${value:,})")
+        
+        # Add each category as a field
+        for category, items in by_category.items():
+            if not items:
+                continue
+                
+            emoji = CATEGORY_EMOJIS.get(category, '📦')
+            embed.add_field(
+                name=f"{emoji} {category.title()}",
+                value="\n".join(items),
+                inline=False
+            )
+        
+        # Show total value
+        embed.add_field(
+            name="💰 Total Value",
+            value=f"${total_value:,}",
+            inline=False
+        )
+        
+        return embed
+    
+    async def save_template(self, interaction: discord.Interaction):
+        """Save the template and show confirmation"""
+        user = str(interaction.user)
+        self.user = user
+    
+        # Get existing template
+        if user not in shop_data.user_templates:
+            shop_data.user_templates[user] = {}
+    
+        # Check if we're editing an existing template or creating new
+        is_edit = self.template_name in shop_data.user_templates[user]
+    
+        # Get the original template (for comparing changes later)
+        original_items = {}
+        if is_edit:
+            original_items = shop_data.user_templates[user][self.template_name].copy()
+    
+        # Create or update the template
+        shop_data.user_templates[user][self.template_name] = {}
+        template = shop_data.user_templates[user][self.template_name]
+    
+        # Apply our selections
+        for item, qty in self.selected_items.items():
+            if qty > 0:  # Only add positive quantities
+                template[item] = qty
+    
+        shop_data.save_data()
+    
+        # Create confirmation embed
+        embed = self.create_current_selection_embed()
+    
+        if is_edit:
+            embed.title = f"✅ Template Updated: {self.template_name}"
+        
+            # Show what changed
+            added_items = []
+            removed_items = []
+            modified_items = []
+        
+            # Find added and modified items
+            for item, qty in template.items():
+                original_qty = original_items.get(item, 0)
+                if original_qty == 0:
+                    display_name = shop_data.display_names.get(item, item)
+                    added_items.append(f"{display_name}: {qty}")
+                elif qty != original_qty:
+                    display_name = shop_data.display_names.get(item, item)
+                    modified_items.append(f"{display_name}: {original_qty} → {qty}")
+        
+            # Find removed items
+            for item, qty in original_items.items():
+                if item not in template:
+                    display_name = shop_data.display_names.get(item, item)
+                    removed_items.append(f"{display_name}: {qty}")
+        
+            # Add change summary if there were changes
+            if added_items or removed_items or modified_items:
+                changes = []
+                if added_items:
+                    changes.append("**Added:**\n" + "\n".join(f"• {item}" for item in added_items))
+                if modified_items:
+                    changes.append("**Modified:**\n" + "\n".join(f"• {item}" for item in modified_items))
+                if removed_items:
+                    changes.append("**Removed:**\n" + "\n".join(f"• {item}" for item in removed_items))
+            
+                embed.add_field(
+                    name="Changes Made",
+                    value="\n\n".join(changes),
+                    inline=False
+                )
+        else:
+            embed.title = f"✅ Template Saved: {self.template_name}"
+    
+        await interaction.response.edit_message(
+            content="Template saved successfully!",
+            embed=embed,
+            view=None  # Remove buttons
+        )
+        
+class TemplateVisualItemView(discord.ui.View):
+    def __init__(self, template_name, category, selected_items):
+        super().__init__(timeout=180)
+        self.template_name = template_name
+        self.category = category
+        self.selected_items = selected_items
+        
+        # Add buttons for each item in category
+        for item in shop_data.item_categories[category]:
+            button = TemplateVisualItemButton(item, self.selected_items.get(item, 0))
+            self.add_item(button)
+            
+        # Add a "Back" button to return to main view
+        self.add_item(self.create_back_button())
+    
+    def create_back_button(self):
+        """Create a button to go back to category selection"""
+        back_button = discord.ui.Button(
+            label="↩️ Back to Categories", 
+            style=discord.ButtonStyle.secondary,
+            row=4
+        )
+        
+        async def back_callback(interaction):
+            # Create a new category view with current selections
+            category_view = TemplateVisualCategoryView(self.template_name)
+            category_view.selected_items = self.selected_items
+            
+            # Get user for consistent handling
+            user = str(interaction.user)
+            category_view.user = user
+            
+            # Update the message with category view
+            embed = category_view.create_current_selection_embed()
+            
+            await interaction.response.edit_message(
+                content=f"Creating template: **{self.template_name}**",
+                embed=embed,
+                view=category_view
+            )
+        
+        back_button.callback = back_callback
+        return back_button
+
+class TemplateVisualItemButton(discord.ui.Button):
+    def __init__(self, item_name, current_qty=0):
+        self.item_name = item_name
+        self.current_qty = current_qty
+        display_name = shop_data.display_names.get(item_name, item_name)
+        
+        # Show quantity if already selected
+        label = display_name
+        if current_qty > 0:
+            label = f"{display_name} ({current_qty})"
+            
+        super().__init__(
+            label=label,
+            style=discord.ButtonStyle.gray if current_qty == 0 else discord.ButtonStyle.green,
+            custom_id=f"template_item_{item_name}"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Show modal to set quantity
+        modal = TemplateVisualQuantityModal(self.item_name, self.view)
+        await interaction.response.send_modal(modal)
+        
+class TemplateVisualQuantityModal(discord.ui.Modal):
+    def __init__(self, item_name, parent_view):
+        self.item_name = item_name
+        self.parent_view = parent_view
+        display_name = shop_data.display_names.get(item_name, item_name)
+        super().__init__(title=f"Add {display_name} to Template")
+        
+        # Show current quantity as default value if it exists
+        current_qty = parent_view.selected_items.get(item_name, 0)
+        
+        self.quantity = discord.ui.TextInput(
+            label=f"Quantity",
+            placeholder="Enter amount (0 to remove)",
+            required=True,
+            default=str(current_qty) if current_qty > 0 else ""
+        )
+        self.add_item(self.quantity)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            quantity = int(self.quantity.value)
+            if quantity < 0:
+                raise ValueError("Quantity cannot be negative")
+                
+            # Update the parent view's selected items
+            self.parent_view.selected_items[self.item_name] = quantity
+            
+            # Update the button appearance
+            for item in self.parent_view.children:
+                if isinstance(item, TemplateVisualItemButton) and item.item_name == self.item_name:
+                    display_name = shop_data.display_names.get(self.item_name, self.item_name)
+                    item.label = f"{display_name} ({quantity})" if quantity > 0 else display_name
+                    item.style = discord.ButtonStyle.green if quantity > 0 else discord.ButtonStyle.gray
+                    break
+            
+            # Create main category view with updated selections
+            main_view = TemplateVisualCategoryView(self.parent_view.template_name)
+            main_view.selected_items = self.parent_view.selected_items
+            
+            # Create an updated item selection view
+            new_item_view = TemplateVisualItemView(
+                self.parent_view.template_name,
+                self.parent_view.category,
+                self.parent_view.selected_items
+            )
+            
+            # Create embed showing current selections
+            embed = discord.Embed(
+                title=f"Item Added: {shop_data.display_names.get(self.item_name, self.item_name)}",
+                description=f"Quantity set to: **{quantity}**",
+                color=COLORS['SUCCESS']
+            )
+            
+            # Add summary of current selections
+            current_items = []
+            for item, qty in self.parent_view.selected_items.items():
+                if qty > 0:
+                    display_name = shop_data.display_names.get(item, item)
+                    price = shop_data.predefined_prices.get(item, 0) * qty
+                    current_items.append(f"{display_name}: {qty:,} (${price:,})")
+            
+            if current_items:
+                embed.add_field(
+                    name="Current Selections",
+                    value="\n".join(current_items),
+                    inline=False
+                )
+            
+            await interaction.response.edit_message(
+                content=f"Select items from **{self.parent_view.category.title()}** to add to template:",
+                embed=embed,
+                view=new_item_view
+            )
+            
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Please enter a valid number (0 or positive)",
+                ephemeral=True
+            )
+            
+                            
+
 # Setup logging with more detailed formatting
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # THIS LINE HAS ERROR
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger("discord_bot")
+
+####################################################################################################################################
 
 ############### CONSTANTS ###############
 COLORS = {
@@ -1514,7 +1860,71 @@ class StockViewToggle(discord.ui.View):
         
         # Create new stock view with updated preference
         stock_view = StockView()
-        await stock_view.show_category(interaction, 'all')  # Show all categories        
+        await stock_view.show_category(interaction, 'all')  # Show all categories
+
+class TemplateEditSelectView(discord.ui.View):
+    def __init__(self, user_id):
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        
+        # Add select dropdown
+        select = discord.ui.Select(
+            placeholder="Choose a template to edit...",
+            min_values=1,
+            max_values=1
+        )
+        
+        # Populate options
+        templates = shop_data.get_user_templates(user_id)
+        for name in templates.keys():
+            select.add_option(label=name, value=name)
+        
+        # Set callback
+        select.callback = self.select_callback
+        self.add_item(select)
+    
+    async def select_callback(self, interaction: discord.Interaction):
+        # Get the selected template name
+        template_name = interaction.data['values'][0]
+        user = str(interaction.user)
+        templates = shop_data.get_user_templates(user)
+        
+        if template_name not in templates:
+            await interaction.response.send_message(
+                "❌ Template not found",
+                ephemeral=True
+            )
+            return
+        
+        # Initialize the visual category view for editing
+        template_view = TemplateVisualCategoryView(template_name)
+        template_view.user = user
+        
+        # Load the existing template items to the view
+        template_items = templates[template_name]
+        template_view.selected_items = template_items.copy()  # Start with existing items
+        
+        # Create embed showing existing items
+        embed = template_view.create_current_selection_embed()
+        embed.title = f"📝 Editing Template: {template_name}"
+        embed.description = "Make changes to your template by selecting categories and modifying items."
+        
+        embed.add_field(
+            name="Instructions",
+            value="1. Click on a category button\n"
+                  "2. Add or modify items and quantities\n"
+                  "3. Return with the Back button\n"
+                  "4. Click 'Finish Template' when done",
+            inline=False
+        )
+        
+        # Edit the message with the template editor view
+        await interaction.response.edit_message(
+            content=f"Editing template: **{template_name}**",
+            embed=embed,
+            view=template_view
+        )           
+             
 
 ############### HELPER FUNCTIONS ###############
 async def is_admin(interaction: discord.Interaction) -> bool:
@@ -2615,19 +3025,20 @@ async def payout(
         
 @bot.tree.command(name="template")
 @app_commands.describe(
-    action="Action to perform (create, use, list, delete)"
+    action="Action to perform (create, use, list, delete, edit)"
 )
 @app_commands.choices(action=[
     app_commands.Choice(name="create", value="create"),
     app_commands.Choice(name="use", value="use"),
     app_commands.Choice(name="list", value="list"),
-    app_commands.Choice(name="delete", value="delete")
+    app_commands.Choice(name="delete", value="delete"),
+    app_commands.Choice(name="edit", value="edit")  # New option
 ])
 async def template_command(interaction: discord.Interaction, action: str):
     user = str(interaction.user)
     
     if action == "create":
-        # Show template name modal
+        # Show template name modal - this now triggers the visual interface
         await interaction.response.send_modal(TemplateNameModal())
         
     elif action == "use":
@@ -2696,9 +3107,28 @@ async def template_command(interaction: discord.Interaction, action: str):
             ephemeral=True
         )
     
+    elif action == "edit":
+        # Show templates to edit
+        templates = shop_data.get_user_templates(user)
+        if not templates:
+            await interaction.response.send_message(
+                "❌ You don't have any templates. Create one with `/template create`",
+                ephemeral=True
+            )
+            return
+        
+        # Create view to select a template to edit
+        view = TemplateEditSelectView(user)
+        
+        await interaction.response.send_message(
+            "Select a template to edit:",
+            view=view,
+            ephemeral=True
+        )
+        
     else:
         await interaction.response.send_message(
-            "❌ Invalid action. Use create, use, list, or delete.",
+            "❌ Invalid action. Use create, use, list, delete, or edit.",
             ephemeral=True
         )
   
@@ -3069,4 +3499,5 @@ logger.info("Script initialized, preparing to connect to Discord...")
 if __name__ == "__main__":
     logger.info("Starting async main function...")
     asyncio.run(main()) 
+        
         
