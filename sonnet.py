@@ -608,6 +608,15 @@ class RemoveCategoryView(discord.ui.View):
     async def tebex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_category_button(interaction, 'tebex')
 
+    @discord.ui.button(label="🐟 Fish", style=discord.ButtonStyle.red, row=2, custom_id="remove_cat_fish")
+    async def fish_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_category_button(interaction, 'fish')
+
+    @discord.ui.button(label="🧩 Misc", style=discord.ButtonStyle.red, row=2, custom_id="remove_cat_misc")
+    async def misc_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_category_button(interaction, 'misc')
+
+
     async def show_category_items(self, interaction: discord.Interaction, category: str):
         # This interaction *must* be responded to, either with items or no items message
         view = discord.ui.View(timeout=180)
@@ -1141,6 +1150,15 @@ class TemplateCategoryView(discord.ui.View):
     @discord.ui.button(label="💎 Tebex", style=discord.ButtonStyle.primary, row=1, custom_id="tpl_cat_tebex")
     async def tebex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_items(interaction, 'tebex')
+    
+    @discord.ui.button(label="🐟 fish", style=discord.ButtonStyle.primary, row=1, custom_id="tpl_cat_fish")
+    async def fish_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_items(interaction, 'fish')
+            
+    @discord.ui.button(label="🧩 Misc", style=discord.ButtonStyle.primary, row=1, custom_id="tpl_cat_misc")
+    async def misc_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_items(interaction, 'misc')
+        
 
 
 class TemplateItemView(discord.ui.View):
@@ -1248,6 +1266,14 @@ class TemplateVisualCategoryView(discord.ui.View):
     @discord.ui.button(label="💎 Tebex", style=discord.ButtonStyle.primary, row=1, custom_id="tpl_vis_cat_tebex")
     async def tebex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_category(interaction, 'tebex')
+        
+    @discord.ui.button(label="🐟 Fish", style=discord.ButtonStyle.primary, row=2, custom_id="tpl_vis_cat_fish")
+    async def fish_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_category(interaction, 'fish')   
+        
+    @discord.ui.button(label="🧩 Misc", style=discord.ButtonStyle.primary, row=2, custom_id="tpl_vis_cat_misc")
+    async def misc_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_category(interaction, 'misc')      
 
     @discord.ui.button(label="✅ Finish & Save Template", style=discord.ButtonStyle.success, row=2, custom_id="tpl_vis_finish")
     async def finish_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1791,6 +1817,14 @@ class StockView(discord.ui.View):
     @discord.ui.button(label="💎 Tebex", style=discord.ButtonStyle.primary, row=1, custom_id="stock_view_tebex")
     async def tebex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._show_category(interaction, 'tebex')
+        
+    @discord.ui.button(label="🐟 Fish", style=discord.ButtonStyle.primary, row=2, custom_id="stock_view_fish")
+    async def fish_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_category(interaction, 'fish')
+    
+    @discord.ui.button(label="🧩 Misc", style=discord.ButtonStyle.primary, row=2, custom_id="stock_view_misc")
+    async def misc_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_category(interaction, 'misc')    
 
     @discord.ui.button(label="📊 All Stock", style=discord.ButtonStyle.secondary, row=1, custom_id="stock_view_all") # Changed style
     async def all_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1923,8 +1957,8 @@ class ShopData:
         self.category_emojis: Dict[str, str] = {} # category: emoji
 
         # Default values (will be loaded/overwritten from config)
-        self._default_thresholds = {'bud': 30, 'joint': 100, 'bag': 100, 'tebex': 10}
-        self._default_emojis = {'bud': '🥦', 'joint': '🚬', 'bag': '🛍️', 'tebex': '💎'}
+        self._default_thresholds = {'bud': 30, 'joint': 100, 'bag': 100, 'tebex': 10, 'fish': 10, 'misc': 10}
+        self._default_emojis = {'bud': '🥦', 'joint': '🚬', 'bag': '🛍️', 'tebex': '💎', 'fish': '🐟', 'misc': '🧩'}
 
         logger.info(f"🌍 Running in {APP_ENV.upper()} environment")
         logger.info(f"🗄️ Using database: {DB_NAME}")
@@ -1966,7 +2000,9 @@ class ShopData:
             'bagof_sojokush': 'Bizarre Bag', 'bagof_khalifakush': 'Strange Bag', 'bagof_pineappleexpress': 'Smelly Bag',
             'bagof_sourdiesel': 'Sour Diesel Bag', 'bagof_whitewidow': 'Whacky Bag', 'bagof_ogkush': 'Old Bag',
             'tebex_vinplate': 'Stolen Plate', 'tebex_talentreset': 'Talent Reset', 'tebex_deep_pockets': 'Deep Pockets',
-            'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster'
+            'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster',
+            'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon',
+            'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
         }
         self.predefined_prices = {
             'bud_sojokush': 5450, 'bud_khalifakush': 1200, 'bud_pineappleexpress': 750, 'bud_sourdiesel': 650,
@@ -1974,13 +2010,16 @@ class ShopData:
             'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 'bagof_ogkush': 37,
             'bagof_whitewidow': 40, 'bagof_sourdiesel': 43, 'bagof_pineappleexpress': 45, 'bagof_khalifakush': 75,
             'bagof_sojokush': 325, 'tebex_vinplate': 400000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 1000000,
-            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000
+            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 'cookedmackerel': 500, 'cookedbass': 500,
+            'cookedsalmon': 600, 'makeshiftarmour': 2750, 'rollingpaper': 20
         }
         self.item_categories = {
             'bud': ['bud_ogkush', 'bud_whitewidow', 'bud_sourdiesel', 'bud_pineappleexpress', 'bud_khalifakush', 'bud_sojokush'],
             'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
             'bag': ['bagof_ogkush', 'bagof_whitewidow', 'bagof_sourdiesel', 'bagof_pineappleexpress', 'bagof_khalifakush', 'bagof_sojokush'],
-            'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster']
+            'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster'],
+            'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon'],
+            'misc': ['makeshiftarmour', 'rollingpaper']
         }
 
     def save_data(self) -> None:
