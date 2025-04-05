@@ -1406,7 +1406,7 @@ class ShopData:
             self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)  # Increased timeout
             # Test connection
             self.mongo_client.server_info()
-            self.db = self.mongo_client["shop_bot"]
+            self.db = self.mongo_client["NCHBot"]
             self.using_mongodb = True
             logger.info("✅ Connected to MongoDB successfully")
         except pymongo.errors.ServerSelectionTimeoutError as e:
