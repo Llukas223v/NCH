@@ -1,6 +1,6 @@
 EPIC NCH BOT
 # NCH Discord Bot
-
+New
 ## Description
 NCH Discord Bot is a comprehensive shop management bot for Discord servers. It allows users to manage their shop inventory, process sales, and handle transactions seamlessly. The bot supports item addition, removal, bulk operations, and template management to keep your shop running smoothly.
 

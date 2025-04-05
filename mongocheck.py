@@ -1,19 +1,22 @@
+# filename: check_backups.py
+from pymongo import MongoClient
 import os
-import fnmatch
+from dotenv import load_dotenv
 
-def print_dir_structure(path='.'):
-    print("Directory structure:")
-    print("-------------------")
-    
-    for root, dirs, files in os.walk(path):
-        level = root.replace(path, '').count(os.sep)
-        indent = ' ' * 4 * level
-        print(f"{indent}{os.path.basename(root)}/")
-        
-        sub_indent = ' ' * 4 * (level + 1)
-        for file in sorted(files):
-            if not file.startswith('.env') and not fnmatch.fnmatch(file, '*token*'):
-                size = os.path.getsize(os.path.join(root, file))
-                print(f"{sub_indent}{file} ({size//1024}KB)")
+# Load environment variables
+load_dotenv()
+mongo_uri = os.getenv("MONGO_URI")
 
-print_dir_structure()
+# Connect to MongoDB
+client = MongoClient(mongo_uri)
+db = client["NCHBot"]
+
+# Check backup collection
+backup_count = db.backups.count_documents({})
+print(f"Found {backup_count} backups in MongoDB")
+
+if backup_count > 0:
+    # Show the most recent backup
+    latest = db.backups.find_one(sort=[("date", -1)])
+    print(f"Latest backup: {latest['date']}")
+    print(f"Filename: {latest.get('filename', 'Not specified')}")
