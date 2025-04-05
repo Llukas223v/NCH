@@ -1397,6 +1397,14 @@ class ShopData:
             logger.critical("❌ MONGO_URI not found in environment variables! Bot requires MongoDB.")
             raise ValueError("MONGO_URI environment variable is required")
     
+        # Add diagnostic logging
+        logger.info(f"MongoDB URI format check: {mongo_uri.split('@')[-1].split('/')[0]} (host part)")
+        logger.info(f"MongoDB URI format check: {mongo_uri.split('/')[-1]} (database name part)")
+    
+        try:
+            logger.info("🔌 Connecting to MongoDB...")
+            self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)
+    
         try:
             logger.info("🔌 Connecting to MongoDB...")
             self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)  # Increased timeout
