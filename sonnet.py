@@ -1403,10 +1403,6 @@ class ShopData:
     
         try:
             logger.info("🔌 Connecting to MongoDB...")
-            self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)
-    
-        try:
-            logger.info("🔌 Connecting to MongoDB...")
             self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)  # Increased timeout
             # Test connection
             self.mongo_client.server_info()
