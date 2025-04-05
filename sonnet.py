@@ -1300,7 +1300,6 @@ COLORS = {
     'DEFAULT': 0x2F3136   # Dark
 }
 
-DATA_FILE = "data.json"
 CONFIG_FILE = "config.json"
 CATEGORY_EMOJIS = {
     'bud': '🥦',
@@ -1392,26 +1391,28 @@ class ShopData:
         self.user_templates: Dict[str, Dict[str, Dict[str, int]]] = {}
         self.user_preferences: Dict[str, Dict[str, Any]] = {}
     
-    # Add MongoDB connection
-        self.using_mongodb = False
+        # MongoDB connection - fail if not available
         mongo_uri = os.getenv("MONGO_URI")
-        if mongo_uri:
-            try:
-                logger.info("🔌 Connecting to MongoDB...")
-                self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
-                # Test connection
-                self.mongo_client.server_info()
-                self.db = self.mongo_client["shop_bot"]
-                self.using_mongodb = True
-                logger.info("✅ Connected to MongoDB successfully")
-            except pymongo.errors.ServerSelectionTimeoutError as e:
-                logger.error(f"❌ MongoDB connection failed: {e}")
-                logger.info("💾 Falling back to local JSON storage")
-            except Exception as e:
-                logger.error(f"❌ MongoDB error: {e}")
-                logger.info("💾 Falling back to local JSON storage")
-        else:
-            logger.info("💾 Using local JSON storage (no MONGO_URI provided)")
+        if not mongo_uri:
+            logger.critical("❌ MONGO_URI not found in environment variables! Bot requires MongoDB.")
+            raise ValueError("MONGO_URI environment variable is required")
+    
+        try:
+            logger.info("🔌 Connecting to MongoDB...")
+            self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)  # Increased timeout
+            # Test connection
+            self.mongo_client.server_info()
+            self.db = self.mongo_client["shop_bot"]
+            self.using_mongodb = True
+            logger.info("✅ Connected to MongoDB successfully")
+        except pymongo.errors.ServerSelectionTimeoutError as e:
+            logger.critical(f"❌ MongoDB connection failed: {e}")
+            logger.critical("💾 Bot requires MongoDB connection to operate")
+            raise RuntimeError("MongoDB connection failed") # Make the bot exit instead of silently switching to JSON
+        except Exception as e:
+            logger.critical(f"❌ MongoDB error: {e}")
+            logger.critical("💾 Cannot continue without MongoDB connection")
+            raise RuntimeError(f"MongoDB error: {e}") # Make the bot exit instead of silently switching
         
         self.display_names = {
             'bud_sojokush': 'Bizarre Bud',
@@ -1444,29 +1445,29 @@ class ShopData:
     
         # Predefined prices and categories
         self.predefined_prices = {
-            'bud_sojokush': 4950,
-            'bud_khalifakush': 1095,
-            'bud_pineappleexpress': 735,
-            'bud_sourdiesel': 735,
-            'bud_whitewidow': 645,
-            'bud_ogkush': 630,
-            'joint_ogkush': 28,
-            'joint_whitewidow': 28,
-            'joint_sourdiesel': 30,
+            'bud_sojokush': 5450,
+            'bud_khalifakush': 1200,
+            'bud_pineappleexpress': 750,
+            'bud_sourdiesel': 650,
+            'bud_whitewidow': 630,
+            'bud_ogkush': 795,
+            'joint_ogkush': 30,
+            'joint_whitewidow': 30,
+            'joint_sourdiesel': 35,
             'joint_pineappleexpress': 35,
             'joint_khalifakush': 60,
-            'joint_sojokush': 130,
-            'bagof_ogkush': 35,
-            'bagof_whitewidow': 35,
-            'bagof_sourdiesel': 35,
-            'bagof_pineappleexpress': 38,
-            'bagof_khalifakush': 69,
-            'bagof_sojokush': 300
+            'joint_sojokush': 125,
+            'bagof_ogkush': 37,
+            'bagof_whitewidow': 40,
+            'bagof_sourdiesel': 43,
+            'bagof_pineappleexpress': 45,
+            'bagof_khalifakush': 75,
+            'bagof_sojokush': 325
         }
         self.predefined_prices.update({
-            'tebex_vinplate': 350000,
+            'tebex_vinplate': 400000,
             'tebex_talentreset': 550000,
-            'tebex_deep_pockets': 1075000,
+            'tebex_deep_pockets': 1000000,
             'licenseplate': 535000,
             'tebex_carwax': 595000,
             'tebex_xpbooster': 1450000
@@ -1492,138 +1493,86 @@ class ShopData:
         self.item_list = list(self.predefined_prices.keys())
     
     def save_data(self) -> None:
-        if self.using_mongodb:
-            try:
-                # Save items collection
-                for item_name, entries in self.items.items():
-                    self.db.items.update_one(
-                        {"_id": item_name},
-                        {"$set": {"entries": entries}},
-                        upsert=True
-                    )
-            
-            # Save settings
-                self.db.settings.update_one(
-                    {"_id": "predefined_prices"},
-                    {"$set": {"data": self.predefined_prices}},
+        try:
+            # Save items collection
+            for item_name, entries in self.items.items():
+                self.db.items.update_one(
+                    {"_id": item_name},
+                    {"$set": {"entries": entries}},
                     upsert=True
                 )
-                self.db.settings.update_one(
-                    {"_id": "user_earnings"},
-                    {"$set": {"data": self.user_earnings}},
-                    upsert=True
-                )
-                self.db.settings.update_one(
-                    {"_id": "user_templates"},
-                    {"$set": {"data": self.user_templates}},
-                    upsert=True
-                )
-                self.db.settings.update_one(
-                    {"_id": "user_preferences"},
-                    {"$set": {"data": self.user_preferences}},
-                    upsert=True
-                )
-            
-                # For sale history, limit to recent entries
-                recent_history = self.sale_history[-500:]  # Keep last 500 entries
-                self.db.settings.update_one(
-                    {"_id": "sale_history"},
-                    {"$set": {"data": recent_history}},
-                    upsert=True
-                )
-            
-                logger.info("💾 Data saved to MongoDB")
-            except Exception as e:
-                logger.error(f"❌ MongoDB save error: {e}")
-                logger.error(traceback.format_exc())
-                # Fall back to local storage
-                self._save_local()
-        else:
-            # Use local storage
-            self._save_local()
         
-    def _save_local(self) -> None:
-        """Save data to local JSON file"""
-        try:
-            with open(DATA_FILE, "w") as f:
-                json.dump({
-                    "items": self.items,
-                    "earnings": self.user_earnings,
-                    "sale_history": self.sale_history,
-                    "user_templates": self.user_templates,
-                    "predefined_prices": self.predefined_prices,
-                    "user_preferences": self.user_preferences
-                }, f, indent=2)
-            logger.info("💾 Data saved to data.json")
+            # Save settings
+            self.db.settings.update_one(
+                {"_id": "predefined_prices"},
+                {"$set": {"data": self.predefined_prices}},
+                upsert=True
+            )
+            self.db.settings.update_one(
+                {"_id": "user_earnings"},
+                {"$set": {"data": self.user_earnings}},
+                upsert=True
+            )
+            self.db.settings.update_one(
+                {"_id": "user_templates"},
+                {"$set": {"data": self.user_templates}},
+                upsert=True
+            )
+            self.db.settings.update_one(
+                {"_id": "user_preferences"},
+                {"$set": {"data": self.user_preferences}},
+                upsert=True
+            )
+        
+            # For sale history, limit to recent entries
+            recent_history = self.sale_history[-500:]  # Keep last 500 entries
+            self.db.settings.update_one(
+                {"_id": "sale_history"},
+                {"$set": {"data": recent_history}},
+                upsert=True
+            )
+        
+            logger.info("💾 Data saved to MongoDB")
         except Exception as e:
-            logger.error(f"❌ Error saving data: {e}")
-    def load_data(self) -> None:
-        if self.using_mongodb:
-            try:
-                # Load items
-                for item_doc in self.db.items.find():
-                    if "entries" in item_doc:
-                        self.items[item_doc["_id"]] = item_doc["entries"]
-            
-                # Load settings
-                prices_doc = self.db.settings.find_one({"_id": "predefined_prices"})
-                if prices_doc and "data" in prices_doc:
-                    self.predefined_prices.update(prices_doc["data"])
-            
-                earnings_doc = self.db.settings.find_one({"_id": "user_earnings"})
-                if earnings_doc and "data" in earnings_doc:
-                    self.user_earnings.update(earnings_doc["data"])
-                
-                templates_doc = self.db.settings.find_one({"_id": "user_templates"})
-                if templates_doc and "data" in templates_doc:
-                    self.user_templates.update(templates_doc["data"])
-                
-                prefs_doc = self.db.settings.find_one({"_id": "user_preferences"})
-                if prefs_doc and "data" in prefs_doc:
-                    self.user_preferences.update(prefs_doc["data"])
-                
-                history_doc = self.db.settings.find_one({"_id": "sale_history"})
-                if history_doc and "data" in history_doc:
-                 self.sale_history = history_doc["data"]
-            
-                logger.info("📂 Data loaded from MongoDB")
-            except Exception as e:
-                logger.error(f"❌ MongoDB load error: {e}")
-                logger.error(traceback.format_exc())
-                # Fall back to local storage
-                self._load_local()
-        else:
-            # Use local storage
-            self._load_local()       
-    def _load_local(self) -> None:
-        """Load data from local JSON file"""
-        try:
-            with open(DATA_FILE, "r") as f:
-                data = json.load(f)
-                if "predefined_prices" in data:
-                    logger.info(f"Found saved prices: {data['predefined_prices']}")
-                    old_prices = self.predefined_prices.copy()
-                    self.predefined_prices.update(data["predefined_prices"])
-                    logger.info(f"Updated prices from: {old_prices}")
-                    logger.info(f"Updated prices to: {self.predefined_prices}")            
-                self.items.update(data.get("items", {}))
-                self.user_earnings.update(data.get("earnings", {}))
-                if "sale_history" in data:
-                    self.sale_history.extend(data["sale_history"])
-                if "user_templates" in data:
-                    self.user_templates.update(data["user_templates"])
-                if "predefined_prices" in data:
-                    self.predefined_prices.update(data["predefined_prices"])
-                if "user_preferences" in data:
-                    self.user_preferences.update(data["user_preferences"])
-            logger.info("📂 Data loaded from local file")
-        except FileNotFoundError:
-            logger.info("📝 No existing data found. Starting fresh.")
-        except json.JSONDecodeError:
-            logger.error("❌ Corrupted data file. Starting fresh.")
-        except Exception as e:
-            logger.error(f"❌ Error loading local data: {e}")
+            logger.error(f"❌ MongoDB save error: {e}")
             logger.error(traceback.format_exc())
+            # No fallback to local storage - just report the error
+            raise
+        
+    
+    def load_data(self) -> None:
+        try:
+            # Load items
+            for item_doc in self.db.items.find():
+                if "entries" in item_doc:
+                    self.items[item_doc["_id"]] = item_doc["entries"]
+        
+            # Load settings
+            prices_doc = self.db.settings.find_one({"_id": "predefined_prices"})
+            if prices_doc and "data" in prices_doc:
+                self.predefined_prices.update(prices_doc["data"])
+
+            earnings_doc = self.db.settings.find_one({"_id": "user_earnings"})
+            if earnings_doc and "data" in earnings_doc:
+                self.user_earnings.update(earnings_doc["data"])
+        
+            templates_doc = self.db.settings.find_one({"_id": "user_templates"})
+            if templates_doc and "data" in templates_doc:
+                self.user_templates.update(templates_doc["data"])
+        
+            prefs_doc = self.db.settings.find_one({"_id": "user_preferences"})
+            if prefs_doc and "data" in prefs_doc:
+                self.user_preferences.update(prefs_doc["data"])
+        
+            history_doc = self.db.settings.find_one({"_id": "sale_history"})
+            if history_doc and "data" in history_doc:
+                self.sale_history = history_doc["data"]
+
+            logger.info("📂 Data loaded from MongoDB")
+        except Exception as e:
+            logger.error(f"❌ MongoDB load error: {e}")
+            logger.error(traceback.format_exc())
+            raise  # Re-raise the error instead of falling back to local storage
     
     def load_config(self) -> None:
         """Load configuration from config.json"""
@@ -2183,83 +2132,6 @@ async def add_large_quantity(interaction: discord.Interaction, quantity: int, no
         )
     await interaction.response.send_message(embed=embed, ephemeral=True)
     return True
-
-async def migrate_local_to_mongodb():
-    """Migrate data from local JSON to MongoDB"""
-    try:
-        # Check if local data exists
-        if os.path.exists(DATA_FILE):
-            logger.info("🔄 Migrating local data to MongoDB...")
-            
-            # Load local data
-            with open(DATA_FILE, "r") as f:
-                data = json.load(f)
-            
-            # Connect to MongoDB if not already connected
-            if not shop_data.using_mongodb:
-                mongo_uri = os.getenv("MONGO_URI")
-                if not mongo_uri:
-                    logger.error("❌ No MongoDB URI provided for migration")
-                    return False
-                    
-                shop_data.mongo_client = MongoClient(mongo_uri)
-                shop_data.db = shop_data.mongo_client["shop_bot"]
-                shop_data.using_mongodb = True
-            
-            # Import items
-            if "items" in data:
-                for item_name, entries in data["items"].items():
-                    shop_data.db.items.update_one(
-                        {"_id": item_name},
-                        {"$set": {"entries": entries}},
-                        upsert=True
-                    )
-                    
-            # Import settings
-            if "predefined_prices" in data:
-                shop_data.db.settings.update_one(
-                    {"_id": "predefined_prices"},
-                    {"$set": {"data": data["predefined_prices"]}},
-                    upsert=True
-                )
-                
-            if "earnings" in data:
-                shop_data.db.settings.update_one(
-                    {"_id": "user_earnings"},
-                    {"$set": {"data": data["earnings"]}},
-                    upsert=True
-                )
-                
-            if "user_templates" in data:
-                shop_data.db.settings.update_one(
-                    {"_id": "user_templates"},
-                    {"$set": {"data": data["user_templates"]}},
-                    upsert=True
-                )
-                
-            if "user_preferences" in data:
-                shop_data.db.settings.update_one(
-                    {"_id": "user_preferences"},
-                    {"$set": {"data": data["user_preferences"]}},
-                    upsert=True
-                )
-                
-            if "sale_history" in data:
-                shop_data.db.settings.update_one(
-                    {"_id": "sale_history"},
-                    {"$set": {"data": data["sale_history"]}},
-                    upsert=True
-                )
-                
-            logger.info("✅ Local data successfully migrated to MongoDB")
-            return True
-        else:
-            logger.info("⚠️ No local data file found for migration")
-            return False
-    except Exception as e:
-        logger.error(f"❌ Migration failed: {e}")
-        logger.error(traceback.format_exc())
-        return False
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -3308,29 +3180,32 @@ async def backup_data(interaction: discord.Interaction):
         script_path = os.path.abspath(__file__)
         current_dir = os.path.dirname(script_path)
         
-        # Create backup filenames
+        # Create backup filename
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_filename = os.path.join(current_dir, f"backup_{timestamp}.json")
-        data_path = os.path.join(current_dir, DATA_FILE)
+        backup_filename = os.path.join(current_dir, f"mongodb_backup_{timestamp}.json")
         
-        # Check if source file exists
-        if not os.path.exists(data_path):
-            logger.error(f"Data file not found: {data_path}")
-            await interaction.followup.send(
-                f"❌ Source file '{data_path}' not found",
-                ephemeral=True
-            )
-            return
+        # Get all data from MongoDB
+        backup_data = {}
         
-        # Create backup
-        logger.info(f"Creating backup from {data_path} to {backup_filename}")
-        with open(data_path, "r") as src, open(backup_filename, "w") as dest:
-            data = json.load(src)  # Parse JSON to validate it
-            json.dump(data, dest, indent=2)  # Write formatted JSON
+        # Backup items
+        backup_data["items"] = {}
+        for item_doc in shop_data.db.items.find():
+            if "_id" in item_doc and "entries" in item_doc:
+                backup_data["items"][item_doc["_id"]] = item_doc["entries"]
         
-        logger.info(f"Backup created successfully: {backup_filename}")
+        # Backup settings
+        backup_data["settings"] = {}
+        for setting_doc in shop_data.db.settings.find():
+            if "_id" in setting_doc and "data" in setting_doc:
+                backup_data["settings"][setting_doc["_id"]] = setting_doc["data"]
+        
+        # Write backup
+        with open(backup_filename, "w") as dest:
+            json.dump(backup_data, dest, indent=2)
+        
+        logger.info(f"MongoDB backup created successfully: {backup_filename}")
         await interaction.followup.send(
-            f"✅ Backup created: `{backup_filename}`",
+            f"✅ MongoDB backup created: `{backup_filename}`",
             ephemeral=True
         )
     except Exception as e:
@@ -3475,7 +3350,6 @@ async def main():
         # Load shop data before connecting
         shop_data.load_data()
         shop_data.load_config()
-        await migrate_local_to_mongodb()
 
         logger.info("Starting bot...")
         await bot.start(TOKEN)
