@@ -4133,7 +4133,6 @@ async def on_message(message: discord.Message):
         logger.info("Processing potential purchase webhook...")
         try:
             # Use regex to extract info - more robust than splitting
-            # Regex patterns (adjust based on actual format, case-insensitive recommended)
             name_pattern = r"(?:Name|Item):\s*(?P<name>[a-zA-Z0-9_]+)" # Match "Name:" or "Item:"
             amount_pattern = r"(?:Amount|Quantity):\s*(?P<amount>\d+)" # Match "Amount:" or "Quantity:"
             profit_pattern = r"(?:Profit|Price|Total):\s*\$?(?P<profit>[\d,]+(?:\.\d+)?)" # Match "Profit:" or "Price:" or "Total:"
