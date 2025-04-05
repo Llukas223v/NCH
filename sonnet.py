@@ -15,6 +15,9 @@ import aiohttp
 import re
 from pymongo import MongoClient
 import pymongo
+import schedule
+from threading import Thread
+import time
 
 # Define intents first
 intents = discord.Intents.default()
@@ -1392,31 +1395,39 @@ class ShopData:
         self.user_preferences: Dict[str, Dict[str, Any]] = {}
     
         # MongoDB connection - fail if not available
+        # Around line 1391, replace your MongoDB connection code with this:
+
+# MongoDB connection with environment separation
         mongo_uri = os.getenv("MONGO_URI")
         if not mongo_uri:
             logger.critical("❌ MONGO_URI not found in environment variables! Bot requires MongoDB.")
             raise ValueError("MONGO_URI environment variable is required")
-    
+
+        # Add environment protection
+        APP_ENV = os.getenv("APP_ENV", "production")  # Default to production if not specified
+        DB_NAME = "NCHBot" if APP_ENV == "production" else "NCHBot_dev" 
+
         # Add diagnostic logging
+        logger.info(f"🌍 Running in {APP_ENV.upper()} environment")
+        logger.info(f"🗄️ Using database: {DB_NAME}")
         logger.info(f"MongoDB URI format check: {mongo_uri.split('@')[-1].split('/')[0]} (host part)")
-        logger.info(f"MongoDB URI format check: {mongo_uri.split('/')[-1]} (database name part)")
-    
+
         try:
             logger.info("🔌 Connecting to MongoDB...")
-            self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)  # Increased timeout
+            self.mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)
             # Test connection
             self.mongo_client.server_info()
-            self.db = self.mongo_client["NCHBot"]
+            self.db = self.mongo_client[DB_NAME]
             self.using_mongodb = True
-            logger.info("✅ Connected to MongoDB successfully")
+            logger.info(f"✅ Connected to MongoDB successfully (Database: {DB_NAME})")
         except pymongo.errors.ServerSelectionTimeoutError as e:
             logger.critical(f"❌ MongoDB connection failed: {e}")
             logger.critical("💾 Bot requires MongoDB connection to operate")
-            raise RuntimeError("MongoDB connection failed") # Make the bot exit instead of silently switching to JSON
+            raise RuntimeError("MongoDB connection failed") 
         except Exception as e:
             logger.critical(f"❌ MongoDB error: {e}")
             logger.critical("💾 Cannot continue without MongoDB connection")
-            raise RuntimeError(f"MongoDB error: {e}") # Make the bot exit instead of silently switching
+            raise RuntimeError(f"MongoDB error: {e}")
         
         self.display_names = {
             'bud_sojokush': 'Bizarre Bud',
@@ -3238,7 +3249,55 @@ async def bulk_add_visual(interaction: discord.Interaction, category: Literal["b
         view=view,
         ephemeral=True
     )
-
+@bot.tree.command(name="dmbackup")
+async def dm_backup(interaction: discord.Interaction):
+    """Send a backup of the database to your DM"""
+    if not await is_admin(interaction):
+        await interaction.response.send_message("❌ Admin only", ephemeral=True)
+        return
+        
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    
+    try:
+        # Create backup filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"dm_backup_{timestamp}.json"
+        
+        # Export data
+        backup_data = {}
+        
+        # Backup items
+        backup_data["items"] = {}
+        for item_doc in shop_data.db.items.find():
+            if "_id" in item_doc and "entries" in item_doc:
+                backup_data["items"][item_doc["_id"]] = item_doc["entries"]
+        
+        # Backup settings
+        backup_data["settings"] = {}
+        for setting_doc in shop_data.db.settings.find():
+            if "_id" in setting_doc and "data" in setting_doc:
+                backup_data["settings"][setting_doc["_id"]] = setting_doc["data"]
+        
+        # Write backup
+        with open(backup_filename, "w") as dest:
+            json.dump(backup_data, dest, indent=2)
+        
+        # Send to DM
+        with open(backup_filename, "rb") as file:
+            await interaction.user.send(
+                f"📦 Requested backup - {timestamp}",
+                file=discord.File(file, filename=backup_filename)
+            )
+            
+        # Clean up file
+        try:
+            os.remove(backup_filename)
+        except:
+            pass
+            
+        await interaction.followup.send("✅ Backup sent to your DM!", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Failed to create/send backup: {e}", ephemeral=True)
 
 
     
@@ -3349,11 +3408,75 @@ async def on_ready():
         logger.error(f"❌ Error during startup: {e}")
         logger.error(traceback.format_exc())
 
+#Autobackup#
+
+def create_automatic_backup():
+    try:
+        # Generate filename with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        script_path = os.path.abspath(__file__)
+        current_dir = os.path.dirname(script_path)
+        backup_filename = os.path.join(current_dir, f"auto_backup_{timestamp}.json")
+        
+        # Create backup
+        backup_data = {}
+        
+        # Backup items
+        backup_data["items"] = {}
+        for item_doc in shop_data.db.items.find():
+            if "_id" in item_doc and "entries" in item_doc:
+                backup_data["items"][item_doc["_id"]] = item_doc["entries"]
+        
+        # Backup settings
+        backup_data["settings"] = {}
+        for setting_doc in shop_data.db.settings.find():
+            if "_id" in setting_doc and "data" in setting_doc:
+                backup_data["settings"][setting_doc["_id"]] = setting_doc["data"]
+        
+        # Write backup locally
+        with open(backup_filename, "w") as dest:
+            json.dump(backup_data, dest, indent=2)
+        
+        logger.info(f"🔄 Automatic backup created: {backup_filename}")
+        
+        # Also store a backup in MongoDB itself
+        shop_data.db.backups.insert_one({
+            "date": datetime.datetime.now(),
+            "filename": backup_filename,
+            "data": backup_data
+        })
+        
+        
+    except Exception as e:
+        logger.error(f"❌ Automatic backup failed: {e}")
+        logger.error(traceback.format_exc())
+
+# Add scheduler function
+def run_scheduler():
+    # Schedule daily backup at 3:00 AM
+    schedule.every().day.at("03:00").do(create_automatic_backup)
+    # Also run backup every 6 hours as a safety measure
+    schedule.every(6).hours.do(create_automatic_backup)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
+# In your async main() function, add this before starting the bot:
+
 async def main():
     try:
         # Load shop data before connecting
         shop_data.load_data()
         shop_data.load_config()
+
+        # Start the scheduler in a background thread
+        scheduler_thread = Thread(target=run_scheduler, daemon=True)
+        scheduler_thread.start()
+        logger.info("🔄 Automatic backup scheduler started")
+        
+        # Create an initial backup at startup
+        create_automatic_backup()
 
         logger.info("Starting bot...")
         await bot.start(TOKEN)
