@@ -4095,10 +4095,9 @@ async def on_message(message: discord.Message):
         try:
             # Use regex to extract info - more robust than splitting
             # Regex patterns (adjust based on actual format, case-insensitive recommended)
-            name_pattern = r"Name:\s*(?P<name>[a-zA-Z0-9_]+)" # Assumes internal name format
-            amount_pattern = r"Amount:\s*(?P<amount>\d+)"
-            # Handles optional $ and commas in profit
-            profit_pattern = r"Profit:\s*\$?(?P<profit>[\d,]+(?:\.\d+)?)"
+            name_pattern = r"(?:Name|Item):\s*(?P<name>[a-zA-Z0-9_]+)" # Match "Name:" or "Item:"
+            amount_pattern = r"(?:Amount|Quantity):\s*(?P<amount>\d+)" # Match "Amount:" or "Quantity:"
+            profit_pattern = r"(?:Profit|Price|Total):\s*\$?(?P<profit>[\d,]+(?:\.\d+)?)" # Match "Profit:" or "Price:" or "Total:"
 
             name_match = re.search(name_pattern, message_text, re.IGNORECASE)
             amount_match = re.search(amount_pattern, message_text, re.IGNORECASE)
