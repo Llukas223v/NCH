@@ -1,3 +1,19 @@
 {
-  "stock_message_id": 1350616801091780618
+  "stock_message_id": 1358240621424545833,
+  "low_stock_thresholds": {
+    "bud": 30,
+    "joint": 100,
+    "bag": 100,
+    "tebex": 10,
+    "fish": 10,
+    "misc": 10
+  },
+  "category_emojis": {
+    "bud": "\ud83e\udd66",
+    "joint": "\ud83d\udeac",
+    "bag": "\ud83d\udecd\ufe0f",
+    "tebex": "\ud83d\udc8e",
+    "fish": "\ud83d\udc1f",
+    "misc": "\ud83e\udde9"
+  }
 }
