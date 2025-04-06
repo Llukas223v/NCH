@@ -2501,13 +2501,19 @@ async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: 
     earnings_updates: Dict[str, int] = {} # Track earnings per user for this sale
 
     # Find original indices (needed because we're working on a sorted copy)
-    original_indices = {id(entry): i for i, entry in enumerate(shop_data.items.get(item_name, []))}
+    original_indices = {}
+    for i, entry in enumerate(shop_data.items.get(item_name, [])):
+        # Use consistent attributes to make a key
+        if isinstance(entry, dict):
+            key = (entry.get('person'), entry.get('date'), entry.get('price'), entry.get('quantity'))
+            original_indices[key] = i
 
     for entry in stock_entries:
         if remaining_to_sell <= 0:
             break
 
-        original_index = original_indices.get(id(entry))
+        key = (entry.get('person'), entry.get('date'), entry.get('price'), entry.get('quantity'))
+        original_index = original_indices.get(key)
         if original_index is None:
              logger.error(f"Could not find original index for entry: {entry}. Skipping.")
              continue # Should not happen if logic is correct
