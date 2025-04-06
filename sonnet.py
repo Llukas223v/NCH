@@ -2331,6 +2331,7 @@ async def update_stock_message() -> None:
     messages_content = []
     current_message = f"**📊 Current Shop Stock** (Updated: <t:{int(datetime.datetime.now().timestamp())}:R>)\n\n"
     total_value = 0
+    logger.debug(f"Starting total_value calculation at {total_value}")
     char_limit = 1950 # Safety margin below 2000
 
     sorted_categories = sorted(shop_data.item_categories.items())
@@ -2414,6 +2415,7 @@ async def update_stock_message() -> None:
                 # Ensure alignment with potentially shorter/longer names
                 item_line = f"{display_name[:18]:<18} {total_quantity:>7,} {formatted_price:>9} {formatted_value:>11} {warning}\n"
                 item_lines.append(item_line)
+            logger.debug(f"Added {item_name} value: {item_value}, category_value now: {category_value}")
 
         if not has_items:
             category_block += "-- No stock in this category --\n"
@@ -2422,6 +2424,7 @@ async def update_stock_message() -> None:
 
         category_block += "```\n"
         total_value += category_value
+        logger.debug(f"Added category {category} value: {category_value}, total_value now: {total_value}")
 
         # Check if adding this whole category block exceeds limit
         if len(current_message) + len(category_header) + len(category_block) > char_limit:
