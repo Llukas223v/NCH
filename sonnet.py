@@ -200,7 +200,7 @@ class BulkAddModal(discord.ui.Modal, title="Bulk Add Items"):
                 total_value += value
                 total_quantity_added += quantity
 
-            asyncio.create_task(update_stock_message())
+            await update_stock_message()
             shop_data.save_data()
 
             confirmation = f"✅ Added {total_added_count} types of items ({total_quantity_added:,} total) worth ${total_value:,} to stock!"
@@ -302,7 +302,7 @@ class BulkRemoveModal(discord.ui.Modal, title="Bulk Remove Items"):
                     errors.append(f"Failed removal for {quantity}x `{display_name}` (Insufficient stock during operation?)")
 
             if actually_removed_items: # Only save and update if something changed
-                 asyncio.create_task(update_stock_message())
+                 await update_stock_message()
                  shop_data.save_data()
 
             confirmation = f"✅ Removed {total_removed_count} types of items ({total_quantity_removed:,} total) worth approx. ${total_value:,} from your stock!"
@@ -482,7 +482,7 @@ class BulkConfirmButton(discord.ui.Button):
                 display_name = shop_data.display_names.get(item_name, item_name)
                 added_items_details.append(f"• {display_name}: {quantity:,} (${value:,})") # Added commas
 
-            asyncio.create_task(update_stock_message())
+            await update_stock_message()
             shop_data.save_data()
 
             embed = discord.Embed(
@@ -550,7 +550,7 @@ class RemoveQuantityModal(discord.ui.Modal):
             if removed_successfully:
                 shop_data.add_to_history("remove_quick", self.internal_name, quantity, 0, user)
                 shop_data.save_data()
-                asyncio.create_task(update_stock_message())
+                await update_stock_message()
 
                 embed = discord.Embed(title="✅ Stock Removed", color=COLORS['SUCCESS'])
                 remaining_total = shop_data.get_total_quantity(self.internal_name)
@@ -885,7 +885,7 @@ class TemplateConfirmView(discord.ui.View):
 
             if added_items_count > 0:
                 shop_data.save_data()
-                asyncio.create_task(update_stock_message())
+                await update_stock_message()
 
                 embed = discord.Embed(
                     title=f"✅ Applied Template: {self.template_name}",
@@ -2346,7 +2346,52 @@ async def update_stock_message() -> None:
         category_value = 0
         item_lines = []
 
-        sorted_items = sorted(category_items, key=lambda x: shop_data.display_names.get(x, x))
+        def get_item_order(item_name):
+            # Define custom ordering within each category
+            category = shop_data.get_category_for_item(item_name)
+    
+            # Custom order for joints
+            if category == 'joint':
+                order_map = {
+                    'joint_ogkush': 1,      # Old Joint
+                    'joint_whitewidow': 2,  # Whacky Joint
+                    'joint_sourdiesel': 3,  # Sour Diesel Joint
+                    'joint_pineappleexpress': 4, # Smelly Joint
+                    'joint_khalifakush': 5, # Strange Joint
+                    'joint_sojokush': 6,    # Bizarre Joint
+                }
+                return order_map.get(item_name, 999)  # Default to end for unknown items
+    
+            # Custom order for buds
+            elif category == 'bud':
+                order_map = {
+                    'bud_ogkush': 1,      # Old Bud
+                    'bud_whitewidow': 2,  # Whacky Bud
+                    'bud_sourdiesel': 3,  # Sour Diesel Bud
+                    'bud_pineappleexpress': 4, # Smelly Bud
+                    'bud_khalifakush': 5, # Strange Bud
+                    'bud_sojokush': 6,    # Bizarre Bud
+                }
+                return order_map.get(item_name, 999)
+    
+            # Custom order for bags
+            elif category == 'bag':
+                order_map = {
+                    'bagof_ogkush': 1,      # Old Bag
+                    'bagof_whitewidow': 2,  # Whacky Bag
+                    'bagof_sourdiesel': 3,  # Sour Diesel Bag
+                    'bagof_pineappleexpress': 4, # Smelly Bag
+                    'bagof_khalifakush': 5, # Strange Bag
+                    'bagof_sojokush': 6,    # Bizarre Bag
+                }
+                return order_map.get(item_name, 999)
+    
+            # Default to alphabetical sorting by display name for other categories
+            else:
+                return shop_data.display_names.get(item_name, item_name)
+
+        # Use the custom sort function
+        sorted_items = sorted(category_items, key=get_item_order)
 
         for item_name in sorted_items:
             # No need to check shop_data.items - get_total_quantity handles it
@@ -2554,7 +2599,7 @@ async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: 
         shop_data.add_to_history("sale", item_name, quantity_sold, sale_price_per_item, "customer")
 
         shop_data.save_data() # Save all changes
-        asyncio.create_task(update_stock_message()) # Update stock display
+        await update_stock_message() # Update stock display
         logger.info(f"✅ Sale completed: {quantity_sold}x {display_name}")
         return True
     else:
@@ -2607,7 +2652,7 @@ async def add_stock_internal(
 
     # Save and update message are typically handled by the caller *after* all operations
     # shop_data.save_data() # Caller saves
-    # asyncio.create_task(update_stock_message()) # Caller updates
+    # await update_stock_message() # Caller updates
 
     # Send response only if requested (e.g., not called from a modal that edits message)
     if respond:
@@ -2690,7 +2735,7 @@ async def add_large_quantity(
     if add_success:
         shop_data.add_to_history("add_large", normalized_item, quantity, price, str(interaction.user)) # Specific action
         shop_data.save_data()
-        asyncio.create_task(update_stock_message())
+        await update_stock_message()
 
         confirm_embed = discord.Embed(
             title="✅ Stock Added (Large Quantity)",
@@ -2902,7 +2947,7 @@ async def add_stock(
         if add_success:
             shop_data.add_to_history("add", item, quantity, final_price, target_user_str)
             shop_data.save_data()
-            asyncio.create_task(update_stock_message())
+            await update_stock_message()
 
             display_name = shop_data.display_names.get(item, item)
             embed = discord.Embed(title="✅ Stock Added", color=COLORS['SUCCESS'])
@@ -2961,7 +3006,7 @@ async def remove_stock(interaction: discord.Interaction, quantity: int, item: st
         if removed_successfully:
             shop_data.add_to_history("remove", item, quantity, 0, user)
             shop_data.save_data()
-            asyncio.create_task(update_stock_message())
+            await update_stock_message()
 
             embed = discord.Embed(title="✅ Stock Removed", color=COLORS['SUCCESS'])
             remaining_total = shop_data.get_total_quantity(item)
@@ -3044,7 +3089,7 @@ async def set_stock(
 
         shop_data.add_to_history("set", item, quantity, final_price, target_user_str)
         shop_data.save_data()
-        asyncio.create_task(update_stock_message())
+        await update_stock_message()
 
         display_name = shop_data.display_names.get(item, item)
         embed = discord.Embed(
@@ -3155,7 +3200,7 @@ async def clear_stock(
         # Save and update only if changes were made
         if cleared_items:
             shop_data.save_data()
-            asyncio.create_task(update_stock_message())
+            await update_stock_message()
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -3721,7 +3766,7 @@ async def change_price(
         # Prices are static for now, so save_data mainly saves stock changes if update_existing=True
         # Need to decide if predefined_prices should be saved to DB/Config if they change via command
 
-        asyncio.create_task(update_stock_message())
+        await update_stock_message()
 
         embed = discord.Embed(title="⚙️ Price Updated (Admin)", color=COLORS['SUCCESS'])
         embed.add_field(name="Item", value=display_name, inline=True)
