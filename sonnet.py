@@ -1950,7 +1950,7 @@ class ShopData:
         self.items: Dict[str, List[Dict[str, Any]]] = {}
         self.user_earnings: Dict[str, int] = {}
         self.sale_history: List[Dict[str, Any]] = []
-        self.stock_message_id: Optional[int] = None
+        self.stock_message_ids: List[int] = []
         self.user_templates: Dict[str, Dict[str, Dict[str, int]]] = {} # user_id_str: {template_name: {item: qty}}
         self.user_preferences: Dict[str, Dict[str, Any]] = {} # user_id_str: {pref_name: value}
         self.low_stock_thresholds: Dict[str, int] = {} # category: threshold
@@ -2105,7 +2105,7 @@ class ShopData:
         try:
             with open(CONFIG_FILE, "r") as f:
                 config = json.load(f)
-                self.stock_message_id = config.get("stock_message_id")
+                self.stock_message_ids = config.get("stock_message_ids", [])
                 # Load thresholds and emojis, falling back to defaults if missing/invalid
                 loaded_thresholds = config.get("low_stock_thresholds", self._default_thresholds)
                 self.low_stock_thresholds = loaded_thresholds if isinstance(loaded_thresholds, dict) else self._default_thresholds
@@ -2113,21 +2113,21 @@ class ShopData:
                 loaded_emojis = config.get("category_emojis", self._default_emojis)
                 self.category_emojis = loaded_emojis if isinstance(loaded_emojis, dict) else self._default_emojis
 
-                logger.info(f"📂 Config loaded: stock_msg_id={self.stock_message_id}, thresholds/emojis loaded.")
+                logger.info(f"📂 Config loaded: stock_msg_ids={self.stock_message_ids}, thresholds/emojis loaded.")
         except FileNotFoundError:
             logger.warning(f"📝 Config file '{CONFIG_FILE}' not found. Using defaults and creating file on next save.")
-            self.stock_message_id = None
+            self.stock_message_ids = None
             self.low_stock_thresholds = self._default_thresholds.copy()
             self.category_emojis = self._default_emojis.copy()
         except json.JSONDecodeError:
              logger.error(f"❌ Error decoding '{CONFIG_FILE}'. Please check its format. Using defaults.")
-             self.stock_message_id = None
+             self.stock_message_ids = None
              self.low_stock_thresholds = self._default_thresholds.copy()
              self.category_emojis = self._default_emojis.copy()
         except Exception as e:
             logger.error(f"❌ Error loading config '{CONFIG_FILE}': {e}\n{traceback.format_exc()}")
             # Fallback to defaults in case of other errors
-            self.stock_message_id = None
+            self.stock_message_ids = None
             self.low_stock_thresholds = self._default_thresholds.copy()
             self.category_emojis = self._default_emojis.copy()
 
@@ -2135,7 +2135,7 @@ class ShopData:
         """Save configuration to config.json"""
         try:
             config_data = {
-                "stock_message_id": self.stock_message_id,
+                "stock_message_ids": self.stock_message_ids,
                 "low_stock_thresholds": self.low_stock_thresholds,
                 "category_emojis": self.category_emojis
             }
@@ -2329,7 +2329,8 @@ async def update_stock_message() -> None:
 
 
     messages_content = []
-    current_message = f"**📊 Current Shop Stock** (Updated: <t:{int(datetime.datetime.now().timestamp())}:R>)\n\n"
+    timestamp = int(datetime.datetime.now().timestamp())
+    current_message = f"**📊 Current Shop Stock** (Updated: <t:{timestamp}:R>)\n"
     total_value = 0
     logger.debug(f"Starting total_value calculation at {total_value}")
     char_limit = 1950 # Safety margin below 2000
@@ -2449,81 +2450,74 @@ async def update_stock_message() -> None:
 
     try:
         new_message_ids = []
-        # Fetch existing messages if IDs are stored (future: handle multiple message IDs)
-        old_message_id = shop_data.stock_message_id # Assuming only one for now
-        old_message = None
-        if old_message_id:
-             try:
-                  old_message = await channel.fetch_message(old_message_id)
-             except discord.NotFound:
-                  logger.warning(f"Stock message {old_message_id} not found. Will send new.")
-                  shop_data.stock_message_id = None # Clear invalid ID
-             except discord.Forbidden:
-                  logger.error(f"No permission to fetch stock message {old_message_id}.")
-                  shop_data.stock_message_id = None
-             except Exception as fetch_err:
-                  logger.error(f"Error fetching old stock message {old_message_id}: {fetch_err}")
-                  shop_data.stock_message_id = None
-
-
-        # Send/Edit logic (simplified for single message assumption)
-        if old_message:
+        # Fetch existing messages with better handling for multiple messages
+        old_message_ids = shop_data.stock_message_ids.copy()  # Work with a copy
+        old_messages = {}
+    
+        # Fetch all existing messages
+        if old_message_ids:
+            for idx, msg_id in enumerate(old_message_ids):
+                try:
+                    old_message = await channel.fetch_message(msg_id)
+                    old_messages[idx] = old_message
+                except discord.NotFound:
+                    logger.warning(f"Stock message {msg_id} (part {idx+1}) not found.")
+                except Exception as e:
+                    logger.error(f"Error fetching stock message {msg_id}: {e}")
+    
+        # Send/edit messages using the cached messages
+        for i, content in enumerate(messages_content):
+            if i in old_messages:  # Try to update existing message
+                try:
+                    await old_messages[i].edit(content=content)
+                    new_message_ids.append(old_messages[i].id)
+                    logger.info(f"Updated stock message part {i+1}/{len(messages_content)}")
+                except Exception as e:
+                    logger.error(f"Failed to edit stock message part {i+1}: {e}")
+                    try:
+                        msg = await channel.send(content)
+                        new_message_ids.append(msg.id)
+                    except Exception:
+                        logger.error(f"Also failed to send new message for part {i+1}")
+            else:  # Send new message
+                try:
+                    # Add rate limit handling
+                    if i > 0:
+                        await asyncio.sleep(1.1)
+                    msg = await channel.send(content)
+                    new_message_ids.append(msg.id)
+                    logger.info(f"Sent new stock message part {i+1}/{len(messages_content)}")
+                except Exception as e:
+                    logger.error(f"Failed to send stock message part {i+1}: {e}")
+    
+        # Clean up any extra old messages
+        for i in range(len(messages_content), len(old_message_ids)):
+            if i in old_messages:
+                try:
+                    await old_messages[i].delete()
+                    logger.info(f"Deleted extra stock message part {i+1}")
+                except Exception:
+                    logger.warning(f"Failed to delete extra message {old_message_ids[i]}")
+    
+        # Save the updated message IDs
+        if shop_data.stock_message_ids != new_message_ids:
+            shop_data.stock_message_ids = new_message_ids
+            shop_data.save_config()
+            logger.info(f"📝 Updated stock message IDs: {new_message_ids}")
             try:
-                await old_message.edit(content=messages_content[0]) # Edit the first part
-                new_message_ids.append(old_message.id)
-        
-                # Better handling for additional parts
-                if len(messages_content) > 1:
-                    logger.info(f"Stock content requires {len(messages_content)} messages. Updating additional parts...")
-                    # Find existing continuation messages or create new ones
-                    for i, content in enumerate(messages_content[1:], 1):
-                        # Try to find continuation message by relation
-                        # This would require storing multiple message IDs in config
-                        # For now, just send additional parts as new messages
-                        new_msg = await channel.send(content)
-                        # Store these IDs somewhere if you want to edit them later
-            
-            except Exception as edit_err:
-                  logger.error(f"Failed to edit stock message {old_message_id}: {edit_err}. Sending new.")
-                  # Fallback: delete old, send new
-                  try: await old_message.delete()
-                  except: pass
-                  new_msg = await channel.send(messages_content[0])
-                  new_message_ids.append(new_msg.id)
-                  # Handle parts > 1 if needed
-        else:
-             # Send new message(s)
-             for i, content in enumerate(messages_content):
-                  # Handle potential rate limits if sending multiple quickly
-                  if i > 0: await asyncio.sleep(1.1)
-                  try:
-                       msg = await channel.send(content)
-                       new_message_ids.append(msg.id)
-                  except discord.Forbidden:
-                       logger.error(f"No permission to send messages in stock channel {STOCK_CHANNEL_ID}.")
-                       return # Stop trying if permission denied
-                  except Exception as send_err:
-                       logger.error(f"Failed to send stock message part {i+1}: {send_err}")
-
-
-        # Save the ID of the primary message (first one)
-        if new_message_ids:
-            new_primary_id = new_message_ids[0]
-            if shop_data.stock_message_id != new_primary_id:
-                shop_data.stock_message_id = new_primary_id
-                shop_data.save_config() # Save config only if ID changed
-            logger.info(f"📝 Stock message updated/sent (Primary ID: {new_primary_id})")
-        else:
-            logger.error("❌ Failed to send or edit any part of the stock message.")
-            if shop_data.stock_message_id is not None: # Clear ID if we failed to update
-                 shop_data.stock_message_id = None
-                 shop_data.save_config()
-
-
-    except discord.Forbidden:
-        logger.error(f"❌ Bot lacks permissions (e.g., Send Messages, Manage Messages) in channel {STOCK_CHANNEL_ID}")
+                old_message = await channel.fetch_message(old_message_id)
+            except discord.NotFound:
+                logger.warning(f"Stock message {old_message_id} not found. Will send new.")
+                shop_data.stock_message_id = None # Clear invalid ID
+            except discord.Forbidden:
+                logger.error(f"No permission to fetch stock message {old_message_id}.")
+                shop_data.stock_message_id = None
+            except Exception as fetch_err:
+                logger.error(f"Error fetching old stock message {old_message_id}: {fetch_err}")
+                shop_data.stock_message_id = None
     except Exception as e:
-        logger.error(f"❌ Failed to update stock message: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error updating stock message: {e}")
+        return  # Return early on error
 
 
 async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: int) -> bool:

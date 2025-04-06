@@ -1,10 +1,10 @@
 {
   "stock_message_id": 1358240621424545833,
   "low_stock_thresholds": {
-    "bud": 30,
+    "bud": 50,
     "joint": 100,
     "bag": 100,
-    "tebex": 10,
+    "tebex": 2,
     "fish": 10,
     "misc": 10
   },
