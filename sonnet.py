@@ -2437,11 +2437,13 @@ async def update_stock_message() -> None:
 
     # Add final summary if it fits, otherwise start new message
     summary = f"\n💰 **Total Stock Value:** ${total_value:,}"
-    if len(current_message) + len(summary) <= char_limit:
-        current_message += summary
+    # Always include summary in the first message
+    if messages_content:
+        # If we already have messages, add to the first one
+        messages_content[0] += summary
     else:
-        messages_content.append(current_message) # Add previous message first
-        current_message = summary # Summary becomes its own message (unlikely)
+        # Otherwise add to current message (which will become the first)
+        current_message += summary
 
     messages_content.append(current_message) # Add the last message
 
@@ -2466,14 +2468,22 @@ async def update_stock_message() -> None:
 
         # Send/Edit logic (simplified for single message assumption)
         if old_message:
-             try:
-                  await old_message.edit(content=messages_content[0]) # Edit the first part
-                  new_message_ids.append(old_message.id)
-                  # Handle potential extra message parts if needed later
-                  if len(messages_content) > 1:
-                       logger.warning("Stock message content exceeds single message limit - currently only updating first part.")
-                       # TODO: Implement logic to delete/send additional messages if structure changes drastically
-             except Exception as edit_err:
+            try:
+                await old_message.edit(content=messages_content[0]) # Edit the first part
+                new_message_ids.append(old_message.id)
+        
+                # Better handling for additional parts
+                if len(messages_content) > 1:
+                    logger.info(f"Stock content requires {len(messages_content)} messages. Updating additional parts...")
+                    # Find existing continuation messages or create new ones
+                    for i, content in enumerate(messages_content[1:], 1):
+                        # Try to find continuation message by relation
+                        # This would require storing multiple message IDs in config
+                        # For now, just send additional parts as new messages
+                        new_msg = await channel.send(content)
+                        # Store these IDs somewhere if you want to edit them later
+            
+            except Exception as edit_err:
                   logger.error(f"Failed to edit stock message {old_message_id}: {edit_err}. Sending new.")
                   # Fallback: delete old, send new
                   try: await old_message.delete()
