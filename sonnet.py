@@ -2330,10 +2330,21 @@ async def update_stock_message() -> None:
 
     messages_content = []
     timestamp = int(datetime.datetime.now().timestamp())
-    current_message = f"**📊 Current Shop Stock** (Updated: <t:{timestamp}:R>)\n"
-    total_value = 0
-    logger.debug(f"Starting total_value calculation at {total_value}")
     char_limit = 1950 # Safety margin below 2000
+
+    # Calculate total value before building messages
+    total_value = 0
+    for item_name in shop_data.get_all_items():
+        total_quantity = shop_data.get_total_quantity(item_name)
+        if total_quantity > 0:
+            price = shop_data.predefined_prices.get(item_name, 0)
+            item_value = total_quantity * price
+            total_value += item_value
+    logger.debug(f"Calculated total_value: {total_value}")
+
+    # Start the message with the stock value at the top
+    current_message = f"**📊 Current Shop Stock** (Updated: <t:{timestamp}:R>)\n"
+    current_message += f"💰 **Total Stock Value:** ${total_value:,}\n\n"
 
     sorted_categories = sorted(shop_data.item_categories.items())
 
@@ -2435,16 +2446,6 @@ async def update_stock_message() -> None:
         else:
             # Add to the current message
             current_message += category_header + category_block
-
-    # Add final summary if it fits, otherwise start new message
-    summary = f"\n💰 **Total Stock Value:** ${total_value:,}"
-    # Always include summary in the first message
-    if messages_content:
-        # If we already have messages, add to the first one
-        messages_content[0] += summary
-    else:
-        # Otherwise add to current message (which will become the first)
-        current_message += summary
 
     messages_content.append(current_message) # Add the last message
 
