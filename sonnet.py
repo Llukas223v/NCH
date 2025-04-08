@@ -2005,14 +2005,13 @@ class ShopData:
             'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
         }
         self.predefined_prices = {
-            'bud_sojokush': 5450, 'bud_khalifakush': 1200, 'bud_pineappleexpress': 750, 'bud_sourdiesel': 650,
-            'bud_whitewidow': 630, 'bud_ogkush': 795, 'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35,
-            'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 'bagof_ogkush': 37,
-            'bagof_whitewidow': 40, 'bagof_sourdiesel': 43, 'bagof_pineappleexpress': 45, 'bagof_khalifakush': 75,
-            'bagof_sojokush': 325, 'tebex_vinplate': 400000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 1000000,
+            'bud_sojokush': 5150, 'bud_khalifakush': 1150, 'bud_pineappleexpress': 745, 'bud_sourdiesel': 645,
+            'bud_whitewidow': 630, 'bud_ogkush': 780, 'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35,
+            'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 'bagof_ogkush': 35,
+            'bagof_whitewidow': 40, 'bagof_sourdiesel': 40, 'bagof_pineappleexpress': 43, 'bagof_khalifakush': 72,
+            'bagof_sojokush': 325, 'tebex_vinplate': 350000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 950000,
             'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 'cookedmackerel': 500, 'cookedbass': 500, 
-            'cookedgrouper': 500,
-            'cookedsalmon': 600, 'makeshiftarmour': 2750, 'rollingpaper': 20
+            'cookedgrouper': 500, 'cookedsalmon': 500, 'makeshiftarmour': 2750, 'rollingpaper': 20
         }
         self.item_categories = {
             'bud': ['bud_ogkush', 'bud_whitewidow', 'bud_sourdiesel', 'bud_pineappleexpress', 'bud_khalifakush', 'bud_sojokush'],
