@@ -2001,7 +2001,7 @@ class ShopData:
             'bagof_sourdiesel': 'Sour Diesel Bag', 'bagof_whitewidow': 'Whacky Bag', 'bagof_ogkush': 'Old Bag',
             'tebex_vinplate': 'Stolen Plate', 'tebex_talentreset': 'Talent Reset', 'tebex_deep_pockets': 'Deep Pockets',
             'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster',
-            'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon',
+            'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon', 'cookedgrouper': 'Cooked Grouper',
             'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
         }
         self.predefined_prices = {
@@ -2010,7 +2010,8 @@ class ShopData:
             'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 'bagof_ogkush': 37,
             'bagof_whitewidow': 40, 'bagof_sourdiesel': 43, 'bagof_pineappleexpress': 45, 'bagof_khalifakush': 75,
             'bagof_sojokush': 325, 'tebex_vinplate': 400000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 1000000,
-            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 'cookedmackerel': 500, 'cookedbass': 500,
+            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 'cookedmackerel': 500, 'cookedbass': 500, 
+            'cookedgrouper': 500,
             'cookedsalmon': 600, 'makeshiftarmour': 2750, 'rollingpaper': 20
         }
         self.item_categories = {
@@ -2018,7 +2019,7 @@ class ShopData:
             'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
             'bag': ['bagof_ogkush', 'bagof_whitewidow', 'bagof_sourdiesel', 'bagof_pineappleexpress', 'bagof_khalifakush', 'bagof_sojokush'],
             'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster'],
-            'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon'],
+            'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon', 'cookedgrouper'],
             'misc': ['makeshiftarmour', 'rollingpaper']
         }
 
