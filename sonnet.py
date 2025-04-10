@@ -1995,29 +1995,29 @@ class ShopData:
         self.display_names = {
             'bud_sojokush': 'Bizarre Bud', 'bud_khalifakush': 'Strange Bud', 'bud_pineappleexpress': 'Smelly Bud',
             'bud_sourdiesel': 'Sour Diesel Bud', 'bud_whitewidow': 'Whacky Bud', 'bud_ogkush': 'Old Bud',
-            'joint_sojokush': 'Bizarre Joint', 'joint_khalifakush': 'Strange Joint', 'joint_pineappleexpress': 'Smelly Joint',
-            'joint_sourdiesel': 'Sour Diesel Joint', 'joint_whitewidow': 'Whacky Joint', 'joint_ogkush': 'Old Joint',
             'bagof_sojokush': 'Bizarre Bag', 'bagof_khalifakush': 'Strange Bag', 'bagof_pineappleexpress': 'Smelly Bag',
             'bagof_sourdiesel': 'Sour Diesel Bag', 'bagof_whitewidow': 'Whacky Bag', 'bagof_ogkush': 'Old Bag',
+            'joint_sojokush': 'Bizarre Joint', 'joint_khalifakush': 'Strange Joint', 'joint_pineappleexpress': 'Smelly Joint',
+            'joint_sourdiesel': 'Sour Diesel Joint', 'joint_whitewidow': 'Whacky Joint', 'joint_ogkush': 'Old Joint',
             'tebex_vinplate': 'Stolen Plate', 'tebex_talentreset': 'Talent Reset', 'tebex_deep_pockets': 'Deep Pockets',
-            'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster',
+            'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster', 'tebex_crewleadership': 'Crew Leadership',
             'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon', 'cookedgrouper': 'Cooked Grouper',
             'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
         }
         self.predefined_prices = {
-            'bud_sojokush': 5150, 'bud_khalifakush': 1150, 'bud_pineappleexpress': 745, 'bud_sourdiesel': 645,
-            'bud_whitewidow': 630, 'bud_ogkush': 780, 'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35,
-            'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 'bagof_ogkush': 35,
-            'bagof_whitewidow': 40, 'bagof_sourdiesel': 40, 'bagof_pineappleexpress': 43, 'bagof_khalifakush': 72,
-            'bagof_sojokush': 325, 'tebex_vinplate': 350000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 950000,
-            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 'cookedmackerel': 500, 'cookedbass': 500, 
-            'cookedgrouper': 500, 'cookedsalmon': 500, 'makeshiftarmour': 2750, 'rollingpaper': 20
+            'bud_sojokush': 5000, 'bud_khalifakush': 1100, 'bud_pineappleexpress': 745, 'bud_sourdiesel': 645,'bud_whitewidow': 630, 'bud_ogkush': 780,
+            'bagof_ogkush': 35, 'bagof_whitewidow': 40, 'bagof_sourdiesel': 40, 'bagof_pineappleexpress': 43, 'bagof_khalifakush': 72, 'bagof_sojokush': 325, 
+            'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35, 'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 
+            'tebex_vinplate': 350000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 950000,'tebex_crewleadership': 4000000,
+            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 
+            'cookedmackerel': 500, 'cookedbass': 500, 'cookedgrouper': 500, 'cookedsalmon': 500, 
+            'makeshiftarmour': 2750, 'rollingpaper': 20
         }
         self.item_categories = {
             'bud': ['bud_ogkush', 'bud_whitewidow', 'bud_sourdiesel', 'bud_pineappleexpress', 'bud_khalifakush', 'bud_sojokush'],
-            'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
             'bag': ['bagof_ogkush', 'bagof_whitewidow', 'bagof_sourdiesel', 'bagof_pineappleexpress', 'bagof_khalifakush', 'bagof_sojokush'],
-            'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster'],
+            'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
+            'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster', 'tebex_crewleadership'],
             'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon', 'cookedgrouper'],
             'misc': ['makeshiftarmour', 'rollingpaper']
         }
@@ -2346,7 +2346,19 @@ async def update_stock_message() -> None:
     current_message = f"**📊 Current Shop Stock** (Updated: <t:{timestamp}:R>)\n"
     current_message += f"💰 **Total Stock Value:** ${total_value:,}\n\n"
 
-    sorted_categories = sorted(shop_data.item_categories.items())
+    def get_category_order(category_name):
+        category_order = {
+            'bud': 1,    # Show buds first
+            'bag': 2,    # Bags second
+            'joint': 3,  # Joints third
+            'misc': 4,   # Misc fourth
+            'fish': 5,   # Fish fifth
+            'tebex': 6   # Tebex last
+        }
+        return category_order.get(category_name, 999)  # Default to end for unknown categories
+
+    # Sort categories using the custom order
+    sorted_categories = sorted(shop_data.item_categories.items(), key=lambda x: get_category_order(x[0]))
 
     for category, category_items in sorted_categories:
         category_header = f"{shop_data.category_emojis.get(category, '📦')} **{category.upper()}**\n"
