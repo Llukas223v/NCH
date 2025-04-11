@@ -1999,113 +1999,113 @@ class ShopData:
 
         self.item_list = list(self.predefined_prices.keys())
 
+    # Move this outside of __init__, make it a proper instance method
+    def _load_static_data(self):
+        self.display_names = {
+            'bud_sojokush': 'Bizarre Bud', 'bud_khalifakush': 'Strange Bud', 'bud_pineappleexpress': 'Smelly Bud',
+            'bud_sourdiesel': 'Sour Diesel Bud', 'bud_whitewidow': 'Whacky Bud', 'bud_ogkush': 'Old Bud',
+            'bagof_sojokush': 'Bizarre Bag', 'bagof_khalifakush': 'Strange Bag', 'bagof_pineappleexpress': 'Smelly Bag',
+            'bagof_sourdiesel': 'Sour Diesel Bag', 'bagof_whitewidow': 'Whacky Bag', 'bagof_ogkush': 'Old Bag',
+            'joint_sojokush': 'Bizarre Joint', 'joint_khalifakush': 'Strange Joint', 'joint_pineappleexpress': 'Smelly Joint',
+            'joint_sourdiesel': 'Sour Diesel Joint', 'joint_whitewidow': 'Whacky Joint', 'joint_ogkush': 'Old Joint',
+            'tebex_vinplate': 'Stolen Plate', 'tebex_talentreset': 'Talent Reset', 'tebex_deep_pockets': 'Deep Pockets',
+            'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster', 'tebex_crewleadership': 'Crew Leadership',
+            'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon', 'cookedgrouper': 'Cooked Grouper',
+            'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
+        }
+        self.predefined_prices = {
+            'bud_sojokush': 5000, 'bud_khalifakush': 1100, 'bud_pineappleexpress': 745, 'bud_sourdiesel': 645,'bud_whitewidow': 630, 'bud_ogkush': 780,
+            'bagof_ogkush': 35, 'bagof_whitewidow': 40, 'bagof_sourdiesel': 40, 'bagof_pineappleexpress': 43, 'bagof_khalifakush': 72, 'bagof_sojokush': 325, 
+            'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35, 'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 
+            'tebex_vinplate': 350000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 950000,'tebex_crewleadership': 4000000,
+            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 
+            'cookedmackerel': 500, 'cookedbass': 500, 'cookedgrouper': 500, 'cookedsalmon': 500, 
+            'makeshiftarmour': 2750, 'rollingpaper': 20
+        }
+        self.item_categories = {
+            'bud': ['bud_ogkush', 'bud_whitewidow', 'bud_sourdiesel', 'bud_pineappleexpress', 'bud_khalifakush', 'bud_sojokush'],
+            'bag': ['bagof_ogkush', 'bagof_whitewidow', 'bagof_sourdiesel', 'bagof_pineappleexpress', 'bagof_khalifakush', 'bagof_sojokush'],
+            'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
+            'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster', 'tebex_crewleadership'],
+            'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon', 'cookedgrouper'],
+            'misc': ['makeshiftarmour', 'rollingpaper']
+        }
 
-        def _load_static_data(self):
-            self.display_names = {
-                'bud_sojokush': 'Bizarre Bud', 'bud_khalifakush': 'Strange Bud', 'bud_pineappleexpress': 'Smelly Bud',
-                'bud_sourdiesel': 'Sour Diesel Bud', 'bud_whitewidow': 'Whacky Bud', 'bud_ogkush': 'Old Bud',
-                'bagof_sojokush': 'Bizarre Bag', 'bagof_khalifakush': 'Strange Bag', 'bagof_pineappleexpress': 'Smelly Bag',
-                'bagof_sourdiesel': 'Sour Diesel Bag', 'bagof_whitewidow': 'Whacky Bag', 'bagof_ogkush': 'Old Bag',
-                'joint_sojokush': 'Bizarre Joint', 'joint_khalifakush': 'Strange Joint', 'joint_pineappleexpress': 'Smelly Joint',
-                'joint_sourdiesel': 'Sour Diesel Joint', 'joint_whitewidow': 'Whacky Joint', 'joint_ogkush': 'Old Joint',
-                'tebex_vinplate': 'Stolen Plate', 'tebex_talentreset': 'Talent Reset', 'tebex_deep_pockets': 'Deep Pockets',
-                'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster', 'tebex_crewleadership': 'Crew Leadership',
-                'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon', 'cookedgrouper': 'Cooked Grouper',
-                'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
+    def save_data(self) -> None:
+        try:
+            # --- Save to MongoDB ---
+            # Save items (consider batching updates if performance becomes an issue)
+            for item_name, entries in self.items.items():
+                # Filter out entries with quantity 0 before saving? Optional.
+                valid_entries = [e for e in entries if e.get('quantity', 0) > 0]
+                if valid_entries:
+                    self.db.items.update_one(
+                        {"_id": item_name},
+                        {"$set": {"entries": valid_entries}},
+                        upsert=True
+                    )
+                else:
+                    # If no valid entries left, remove the item document
+                    self.db.items.delete_one({"_id": item_name})
+
+            # Save main settings/collections to the 'settings' collection in MongoDB
+            settings_to_save = {
+                "user_earnings": self.user_earnings,
+                "user_templates": self.user_templates,
+                "user_preferences": self.user_preferences,
+                "predefined_prices": self.predefined_prices  # Save prices to MongoDB
             }
-            self.predefined_prices = {
-                'bud_sojokush': 5000, 'bud_khalifakush': 1100, 'bud_pineappleexpress': 745, 'bud_sourdiesel': 645,'bud_whitewidow': 630, 'bud_ogkush': 780,
-                'bagof_ogkush': 35, 'bagof_whitewidow': 40, 'bagof_sourdiesel': 40, 'bagof_pineappleexpress': 43, 'bagof_khalifakush': 72, 'bagof_sojokush': 325, 
-                'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35, 'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 
-                'tebex_vinplate': 350000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 950000,'tebex_crewleadership': 4000000,
-                'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 
-                'cookedmackerel': 500, 'cookedbass': 500, 'cookedgrouper': 500, 'cookedsalmon': 500, 
-                'makeshiftarmour': 2750, 'rollingpaper': 20
-            }
-            self.item_categories = {
-                'bud': ['bud_ogkush', 'bud_whitewidow', 'bud_sourdiesel', 'bud_pineappleexpress', 'bud_khalifakush', 'bud_sojokush'],
-                'bag': ['bagof_ogkush', 'bagof_whitewidow', 'bagof_sourdiesel', 'bagof_pineappleexpress', 'bagof_khalifakush', 'bagof_sojokush'],
-                'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
-                'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster', 'tebex_crewleadership'],
-                'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon', 'cookedgrouper'],
-                'misc': ['makeshiftarmour', 'rollingpaper']
-            }
+            for key, data in settings_to_save.items():
+                self.db.settings.update_one({"_id": key}, {"$set": {"data": data}}, upsert=True)
 
-        def save_data(self) -> None:
-            try:
-                # --- Save to MongoDB ---
-                # Save items (consider batching updates if performance becomes an issue)
-                for item_name, entries in self.items.items():
-                    # Filter out entries with quantity 0 before saving? Optional.
-                    valid_entries = [e for e in entries if e.get('quantity', 0) > 0]
-                    if valid_entries:
-                        self.db.items.update_one(
-                            {"_id": item_name},
-                            {"$set": {"entries": valid_entries}},
-                            upsert=True
-                        )
-                    else:
-                        # If no valid entries left, remove the item document
-                        self.db.items.delete_one({"_id": item_name})
+            # Save limited sale history (limit size to prevent unbounded growth)
+            recent_history = self.sale_history[-1000:] # Keep last 1000 entries
+            self.db.settings.update_one(
+                {"_id": "sale_history"},
+                {"$set": {"data": recent_history}},
+                upsert=True
+            )
+            self.sale_history = recent_history # Update in-memory list to match saved state
 
-                # Save main settings/collections to the 'settings' collection in MongoDB
-                settings_to_save = {
-                    "user_earnings": self.user_earnings,
-                    "user_templates": self.user_templates,
-                    "user_preferences": self.user_preferences,
-                    "predefined_prices": self.predefined_prices  # Save prices to MongoDB
-                }
-                for key, data in settings_to_save.items():
-                    self.db.settings.update_one({"_id": key}, {"$set": {"data": data}}, upsert=True)
+            logger.info("💾 Data saved to MongoDB")
+        except Exception as e:
+            logger.error(f"❌ MongoDB save error: {e}\n{traceback.format_exc()}")
+            # In critical failure, maybe attempt a local JSON dump as emergency fallback?
+            # self._emergency_local_save()
+            raise # Re-raise to indicate failure
 
-                # Save limited sale history (limit size to prevent unbounded growth)
-                recent_history = self.sale_history[-1000:] # Keep last 1000 entries
-                self.db.settings.update_one(
-                    {"_id": "sale_history"},
-                    {"$set": {"data": recent_history}},
-                    upsert=True
-                )
-                self.sale_history = recent_history # Update in-memory list to match saved state
+    def load_data(self) -> None:
+        try:
+            # --- Load from MongoDB ---
+            # Load items
+            self.items = {} # Clear existing memory first
+            for item_doc in self.db.items.find():
+                item_id = item_doc.get("_id")
+                entries = item_doc.get("entries")
+                # Basic validation
+                if isinstance(item_id, str) and isinstance(entries, list):
+                    # Further validation of entries if needed
+                    self.items[item_id] = entries
 
-                logger.info("💾 Data saved to MongoDB")
-            except Exception as e:
-                logger.error(f"❌ MongoDB save error: {e}\n{traceback.format_exc()}")
-                # In critical failure, maybe attempt a local JSON dump as emergency fallback?
-                # self._emergency_local_save()
-                raise # Re-raise to indicate failure
+            # Load settings from the 'settings' collection
+            settings_keys = ["user_earnings", "user_templates", "user_preferences", "sale_history", "predefined_prices"]
+            for key in settings_keys:
+                doc = self.db.settings.find_one({"_id": key})
+                if doc and "data" in doc:
+                # Load into the correct attribute
+                    if key == "user_earnings": self.user_earnings = doc["data"]
+                    elif key == "user_templates": self.user_templates = doc["data"]
+                    elif key == "user_preferences": self.user_preferences = doc["data"]
+                    elif key == "sale_history": self.sale_history = doc["data"]
+                    elif key == "predefined_prices": self.predefined_prices = doc["data"]  # Load prices
 
-        def load_data(self) -> None:
-            try:
-                # --- Load from MongoDB ---
-                # Load items
-                self.items = {} # Clear existing memory first
-                for item_doc in self.db.items.find():
-                    item_id = item_doc.get("_id")
-                    entries = item_doc.get("entries")
-                    # Basic validation
-                    if isinstance(item_id, str) and isinstance(entries, list):
-                         # Further validation of entries if needed
-                         self.items[item_id] = entries
+            logger.info("📂 Data loaded from MongoDB")
 
-                # Load settings from the 'settings' collection
-                settings_keys = ["user_earnings", "user_templates", "user_preferences", "sale_history", "predefined_prices"]
-                for key in settings_keys:
-                    doc = self.db.settings.find_one({"_id": key})
-                    if doc and "data" in doc:
-                    # Load into the correct attribute
-                        if key == "user_earnings": self.user_earnings = doc["data"]
-                        elif key == "user_templates": self.user_templates = doc["data"]
-                        elif key == "user_preferences": self.user_preferences = doc["data"]
-                        elif key == "sale_history": self.sale_history = doc["data"]
-                        elif key == "predefined_prices": self.predefined_prices = doc["data"]  # Load prices
-
-                logger.info("📂 Data loaded from MongoDB")
-
-            except Exception as e:
-                logger.error(f"❌ MongoDB load error: {e}\n{traceback.format_exc()}")
-                # Consider loading from a local emergency backup if DB load fails?
-                # self._try_load_emergency_local()
-                raise # Re-raise error if critical data cannot be loaded
+        except Exception as e:
+            logger.error(f"❌ MongoDB load error: {e}\n{traceback.format_exc()}")
+            # Consider loading from a local emergency backup if DB load fails?
+            # self._try_load_emergency_local()
+            raise # Re-raise error if critical data cannot be loaded
 
 
     def load_config(self) -> None:
