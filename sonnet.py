@@ -200,8 +200,9 @@ class BulkAddModal(discord.ui.Modal, title="Bulk Add Items"):
                 total_value += value
                 total_quantity_added += quantity
 
-            await update_stock_message()
+            # Save and update stock message
             shop_data.save_data()
+            await update_stock_message()
 
             confirmation = f"✅ Added {total_added_count} types of items ({total_quantity_added:,} total) worth ${total_value:,} to stock!"
             if errors:
@@ -239,16 +240,19 @@ class BulkRemoveModal(discord.ui.Modal, title="Bulk Remove Items"):
                 if not item_entry:
                     continue
 
-                match = re.match(r'([a-z_]+):(\d+)', item_entry, re.IGNORECASE)
-                # Allow "50 item" format too for consistency? Not really needed for remove maybe.
-                # match_alt = re.match(r'(\d+)[:\s]+([a-z_]+)', item_entry, re.IGNORECASE)
+                # Support both item:qty and qty item formats
+                match = re.match(r'([a-z_]+)[:\s]+(\d+)', item_entry, re.IGNORECASE)
                 if not match:
-                    #if match_alt: quantity_str, item_name = match_alt.groups() ... else:
-                    errors.append(f"Invalid format: `{item_entry}` (Use item:quantity)")
-                    continue
-
-                item_name, quantity_str = match.groups()
-                item_name = item_name.lower()
+                    match = re.match(r'(\d+)[:\s]+([a-z_]+)', item_entry, re.IGNORECASE)
+                    if match:
+                        quantity_str, item_name = match.groups()
+                        item_name = item_name.lower()
+                    else:
+                        errors.append(f"Invalid format: `{item_entry}`")
+                        continue
+                else:
+                    item_name, quantity_str = match.groups()
+                    item_name = item_name.lower()
 
                 try:
                     quantity = int(quantity_str)
@@ -302,8 +306,9 @@ class BulkRemoveModal(discord.ui.Modal, title="Bulk Remove Items"):
                     errors.append(f"Failed removal for {quantity}x `{display_name}` (Insufficient stock during operation?)")
 
             if actually_removed_items: # Only save and update if something changed
-                 await update_stock_message()
+                 # Save and update stock message
                  shop_data.save_data()
+                 await update_stock_message()
 
             confirmation = f"✅ Removed {total_removed_count} types of items ({total_quantity_removed:,} total) worth approx. ${total_value:,} from your stock!"
             if errors:
@@ -316,7 +321,7 @@ class BulkRemoveModal(discord.ui.Modal, title="Bulk Remove Items"):
             try:
                 await interaction.followup.send("❌ An unexpected error occurred during bulk remove.", ephemeral=True)
             except Exception as followup_e:
-                 logger.error(f"Failed to send error followup for BulkRemoveModal: {followup_e}")
+                logger.error(f"Failed to send error followup for BulkRemoveModal: {followup_e}")
 
 class BulkAddView(discord.ui.View):
     def __init__(self, category: str):
@@ -672,53 +677,50 @@ class QuantityModal(discord.ui.Modal):
                  await interaction.followup.send("❌ Quantity must be positive.", ephemeral=True)
                  return
 
-            # add_stock_internal needs an interaction object to potentially send messages on failure.
-            # We pass the modal's interaction here. If it fails, it will use interaction.followup.
-            success = await add_stock_internal(
-                interaction=interaction,
-                quantity=quantity,
-                item=self.internal_name,
-                respond=False # We handle the success response by editing the original message
+            display_name = shop_data.display_names.get(self.internal_name, self.internal_name)
+            price = shop_data.predefined_prices.get(self.internal_name, 0)
+            user = str(interaction.user)
+            
+            # Add the item to stock
+            shop_data.add_item(self.internal_name, quantity, user)
+            shop_data.add_to_history("add", self.internal_name, quantity, price, user)
+            shop_data.save_data()
+            
+            # Update the stock message
+            await update_stock_message()
+
+            updated_view = None
+            try:
+                 # Recreate the view that was originally shown
+                 if isinstance(self.view_to_return, ItemView):
+                      updated_view = ItemView(self.view_to_return.category)
+                 elif isinstance(self.view_to_return, CategoryView):
+                      updated_view = CategoryView()
+                 # Add more view types if needed
+            except Exception as view_error:
+                 logger.error(f"Failed to recreate view {type(self.view_to_return)} in QuantityModal: {view_error}")
+
+            embed = discord.Embed(
+                title="✅ Item Added",
+                description=f"Added {quantity:,} × {display_name} at ${price:,} each.",
+                color=COLORS['SUCCESS']
             )
 
-            if success:
-                display_name = shop_data.display_names.get(self.internal_name, self.internal_name)
-                price = shop_data.predefined_prices.get(self.internal_name, 0)
-
-                updated_view = None
-                try:
-                     # Recreate the view that was originally shown
-                     if isinstance(self.view_to_return, ItemView):
-                          updated_view = ItemView(self.view_to_return.category)
-                     elif isinstance(self.view_to_return, CategoryView):
-                          updated_view = CategoryView()
-                     # Add more view types if needed
-                except Exception as view_error:
-                     logger.error(f"Failed to recreate view {type(self.view_to_return)} in QuantityModal: {view_error}")
-
-                embed = discord.Embed(
-                    title="✅ Item Added",
-                    description=f"Added {quantity:,} × {display_name} at ${price:,} each.",
-                    color=COLORS['SUCCESS']
-                )
-
-                try:
-                    # Edit the *original message* that had the ItemView/CategoryView buttons
-                    if original_interaction_message:
-                         await original_interaction_message.edit(embed=embed, view=updated_view)
-                         await interaction.followup.send("Stock added successfully!", ephemeral=True)
-                    else:
-                         logger.warning("QuantityModal: Original message context lost for edit.")
-                         await interaction.followup.send(embed=embed, ephemeral=True) # Fallback
-
-                except discord.errors.NotFound:
-                     logger.warning("QuantityModal: Original message not found, could not edit.")
-                     await interaction.followup.send(embed=embed, ephemeral=True) # Fallback
-                except Exception as edit_error:
-                     logger.error(f"QuantityModal: Error editing original message: {edit_error}\n{traceback.format_exc()}")
+            try:
+                # Edit the *original message* that had the ItemView/CategoryView buttons
+                if original_interaction_message:
+                     await original_interaction_message.edit(embed=embed, view=updated_view)
+                     await interaction.followup.send("Stock added successfully!", ephemeral=True)
+                else:
+                     logger.warning("QuantityModal: Original message context lost for edit.")
                      await interaction.followup.send(embed=embed, ephemeral=True) # Fallback
 
-            # If 'success' is False, add_stock_internal should have sent an error message via interaction.followup
+            except discord.errors.NotFound:
+                 logger.warning("QuantityModal: Original message not found, could not edit.")
+                 await interaction.followup.send(embed=embed, ephemeral=True) # Fallback
+            except Exception as edit_error:
+                 logger.error(f"QuantityModal: Error editing original message: {edit_error}\n{traceback.format_exc()}")
+                 await interaction.followup.send(embed=embed, ephemeral=True) # Fallback
 
         except ValueError:
             try:
@@ -1233,6 +1235,7 @@ class TemplateDeleteView(discord.ui.View):
             except: pass
 
 
+# filepath: c:\Users\lukas\Desktop\New folder\bot\sonnet.py
 class TemplateVisualCategoryView(discord.ui.View):
     def __init__(self, template_name):
         super().__init__(timeout=300) # Longer timeout for editor
@@ -1275,11 +1278,11 @@ class TemplateVisualCategoryView(discord.ui.View):
     async def misc_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_category(interaction, 'misc')      
 
-    @discord.ui.button(label="✅ Finish & Save Template", style=discord.ButtonStyle.success, row=2, custom_id="tpl_vis_finish")
+    @discord.ui.button(label="✅ Finish & Save Template", style=discord.ButtonStyle.success, row=3, custom_id="tpl_vis_finish")
     async def finish_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.save_template(interaction)
 
-    @discord.ui.button(label="✏️ Rename", style=discord.ButtonStyle.secondary, row=2, custom_id="tpl_vis_rename")
+    @discord.ui.button(label="✏️ Rename", style=discord.ButtonStyle.secondary, row=3, custom_id="tpl_vis_rename")
     async def rename_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
              # Show modal to rename the current template
@@ -1291,7 +1294,6 @@ class TemplateVisualCategoryView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error opening rename modal: {e}\n{traceback.format_exc()}")
             await interaction.followup.send("❌ Error opening rename modal.", ephemeral=True)
-
 
     async def show_category_items(self, interaction: discord.Interaction, category: str):
         # This interaction needs to edit the current message (showing the category view)
@@ -1458,6 +1460,7 @@ class TemplateVisualCategoryView(discord.ui.View):
             except: pass
 
 
+# filepath: c:\Users\lukas\Desktop\New folder\bot\sonnet.py
 class TemplateVisualItemView(discord.ui.View):
     def __init__(self, template_name, category, selected_items, user_id_str):
         super().__init__(timeout=300) # Match parent view timeout?
@@ -1506,7 +1509,6 @@ class TemplateVisualItemView(discord.ui.View):
                           "4. Click 'Finish & Save' when done.",
                     inline=False
                 )
-
 
                 await interaction.response.edit_message(
                     content=f"Editing template: **{self.template_name}**",
@@ -1693,6 +1695,14 @@ class CategoryView(discord.ui.View):
     @discord.ui.button(label="💎 Tebex", style=discord.ButtonStyle.primary, row=1, custom_id="quickadd_cat_tebex")
     async def tebex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_category(interaction, 'tebex', "💎 Add Tebex Items", COLORS['INFO'])
+        
+    @discord.ui.button(label="🐟 Fish", style=discord.ButtonStyle.primary, row=2, custom_id="quickadd_cat_fish")
+    async def fish_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_category(interaction, 'fish', "🐟 Add Fish", COLORS['INFO'])
+        
+    @discord.ui.button(label="🧩 Misc", style=discord.ButtonStyle.primary, row=2, custom_id="quickadd_cat_misc")
+    async def misc_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_category(interaction, 'misc', "🧩 Add Misc Items", COLORS['INFO'])
 
 
 class StockView(discord.ui.View):
@@ -1990,114 +2000,112 @@ class ShopData:
         self.item_list = list(self.predefined_prices.keys())
 
 
-    def _load_static_data(self):
-         # These could also be moved to a separate JSON/YAML file if they change occasionally
-        self.display_names = {
-            'bud_sojokush': 'Bizarre Bud', 'bud_khalifakush': 'Strange Bud', 'bud_pineappleexpress': 'Smelly Bud',
-            'bud_sourdiesel': 'Sour Diesel Bud', 'bud_whitewidow': 'Whacky Bud', 'bud_ogkush': 'Old Bud',
-            'bagof_sojokush': 'Bizarre Bag', 'bagof_khalifakush': 'Strange Bag', 'bagof_pineappleexpress': 'Smelly Bag',
-            'bagof_sourdiesel': 'Sour Diesel Bag', 'bagof_whitewidow': 'Whacky Bag', 'bagof_ogkush': 'Old Bag',
-            'joint_sojokush': 'Bizarre Joint', 'joint_khalifakush': 'Strange Joint', 'joint_pineappleexpress': 'Smelly Joint',
-            'joint_sourdiesel': 'Sour Diesel Joint', 'joint_whitewidow': 'Whacky Joint', 'joint_ogkush': 'Old Joint',
-            'tebex_vinplate': 'Stolen Plate', 'tebex_talentreset': 'Talent Reset', 'tebex_deep_pockets': 'Deep Pockets',
-            'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster', 'tebex_crewleadership': 'Crew Leadership',
-            'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon', 'cookedgrouper': 'Cooked Grouper',
-            'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
-        }
-        self.predefined_prices = {
-            'bud_sojokush': 5000, 'bud_khalifakush': 1100, 'bud_pineappleexpress': 745, 'bud_sourdiesel': 645,'bud_whitewidow': 630, 'bud_ogkush': 780,
-            'bagof_ogkush': 35, 'bagof_whitewidow': 40, 'bagof_sourdiesel': 40, 'bagof_pineappleexpress': 43, 'bagof_khalifakush': 72, 'bagof_sojokush': 325, 
-            'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35, 'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 
-            'tebex_vinplate': 350000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 950000,'tebex_crewleadership': 4000000,
-            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 
-            'cookedmackerel': 500, 'cookedbass': 500, 'cookedgrouper': 500, 'cookedsalmon': 500, 
-            'makeshiftarmour': 2750, 'rollingpaper': 20
-        }
-        self.item_categories = {
-            'bud': ['bud_ogkush', 'bud_whitewidow', 'bud_sourdiesel', 'bud_pineappleexpress', 'bud_khalifakush', 'bud_sojokush'],
-            'bag': ['bagof_ogkush', 'bagof_whitewidow', 'bagof_sourdiesel', 'bagof_pineappleexpress', 'bagof_khalifakush', 'bagof_sojokush'],
-            'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
-            'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster', 'tebex_crewleadership'],
-            'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon', 'cookedgrouper'],
-            'misc': ['makeshiftarmour', 'rollingpaper']
-        }
-
-    def save_data(self) -> None:
-        try:
-            # --- Save to MongoDB ---
-            # Save items (consider batching updates if performance becomes an issue)
-            for item_name, entries in self.items.items():
-                # Filter out entries with quantity 0 before saving? Optional.
-                valid_entries = [e for e in entries if e.get('quantity', 0) > 0]
-                if valid_entries:
-                    self.db.items.update_one(
-                        {"_id": item_name},
-                        {"$set": {"entries": valid_entries}},
-                        upsert=True
-                    )
-                else:
-                    # If no valid entries left, remove the item document
-                    self.db.items.delete_one({"_id": item_name})
-
-            # Save main settings/collections to the 'settings' collection in MongoDB
-            settings_to_save = {
-                "user_earnings": self.user_earnings,
-                "user_templates": self.user_templates,
-                "user_preferences": self.user_preferences,
-                # Prices are static here, but if they become dynamic:
-                # "predefined_prices": self.predefined_prices
+        def _load_static_data(self):
+            self.display_names = {
+                'bud_sojokush': 'Bizarre Bud', 'bud_khalifakush': 'Strange Bud', 'bud_pineappleexpress': 'Smelly Bud',
+                'bud_sourdiesel': 'Sour Diesel Bud', 'bud_whitewidow': 'Whacky Bud', 'bud_ogkush': 'Old Bud',
+                'bagof_sojokush': 'Bizarre Bag', 'bagof_khalifakush': 'Strange Bag', 'bagof_pineappleexpress': 'Smelly Bag',
+                'bagof_sourdiesel': 'Sour Diesel Bag', 'bagof_whitewidow': 'Whacky Bag', 'bagof_ogkush': 'Old Bag',
+                'joint_sojokush': 'Bizarre Joint', 'joint_khalifakush': 'Strange Joint', 'joint_pineappleexpress': 'Smelly Joint',
+                'joint_sourdiesel': 'Sour Diesel Joint', 'joint_whitewidow': 'Whacky Joint', 'joint_ogkush': 'Old Joint',
+                'tebex_vinplate': 'Stolen Plate', 'tebex_talentreset': 'Talent Reset', 'tebex_deep_pockets': 'Deep Pockets',
+                'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster', 'tebex_crewleadership': 'Crew Leadership',
+                'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon', 'cookedgrouper': 'Cooked Grouper',
+                'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
             }
-            for key, data in settings_to_save.items():
-                 self.db.settings.update_one({"_id": key}, {"$set": {"data": data}}, upsert=True)
+            self.predefined_prices = {
+                'bud_sojokush': 5000, 'bud_khalifakush': 1100, 'bud_pineappleexpress': 745, 'bud_sourdiesel': 645,'bud_whitewidow': 630, 'bud_ogkush': 780,
+                'bagof_ogkush': 35, 'bagof_whitewidow': 40, 'bagof_sourdiesel': 40, 'bagof_pineappleexpress': 43, 'bagof_khalifakush': 72, 'bagof_sojokush': 325, 
+                'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35, 'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 
+                'tebex_vinplate': 350000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 950000,'tebex_crewleadership': 4000000,
+                'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 
+                'cookedmackerel': 500, 'cookedbass': 500, 'cookedgrouper': 500, 'cookedsalmon': 500, 
+                'makeshiftarmour': 2750, 'rollingpaper': 20
+            }
+            self.item_categories = {
+                'bud': ['bud_ogkush', 'bud_whitewidow', 'bud_sourdiesel', 'bud_pineappleexpress', 'bud_khalifakush', 'bud_sojokush'],
+                'bag': ['bagof_ogkush', 'bagof_whitewidow', 'bagof_sourdiesel', 'bagof_pineappleexpress', 'bagof_khalifakush', 'bagof_sojokush'],
+                'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
+                'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster', 'tebex_crewleadership'],
+                'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon', 'cookedgrouper'],
+                'misc': ['makeshiftarmour', 'rollingpaper']
+            }
 
-            # Save limited sale history (limit size to prevent unbounded growth)
-            recent_history = self.sale_history[-1000:] # Keep last 1000 entries
-            self.db.settings.update_one(
-                {"_id": "sale_history"},
-                {"$set": {"data": recent_history}},
-                upsert=True
-            )
-            self.sale_history = recent_history # Update in-memory list to match saved state
+        def save_data(self) -> None:
+            try:
+                # --- Save to MongoDB ---
+                # Save items (consider batching updates if performance becomes an issue)
+                for item_name, entries in self.items.items():
+                    # Filter out entries with quantity 0 before saving? Optional.
+                    valid_entries = [e for e in entries if e.get('quantity', 0) > 0]
+                    if valid_entries:
+                        self.db.items.update_one(
+                            {"_id": item_name},
+                            {"$set": {"entries": valid_entries}},
+                            upsert=True
+                        )
+                    else:
+                        # If no valid entries left, remove the item document
+                        self.db.items.delete_one({"_id": item_name})
 
-            logger.info("💾 Data saved to MongoDB")
-        except Exception as e:
-            logger.error(f"❌ MongoDB save error: {e}\n{traceback.format_exc()}")
-            # In critical failure, maybe attempt a local JSON dump as emergency fallback?
-            # self._emergency_local_save()
-            raise # Re-raise to indicate failure
+                # Save main settings/collections to the 'settings' collection in MongoDB
+                settings_to_save = {
+                    "user_earnings": self.user_earnings,
+                    "user_templates": self.user_templates,
+                    "user_preferences": self.user_preferences,
+                    "predefined_prices": self.predefined_prices  # Save prices to MongoDB
+                }
+                for key, data in settings_to_save.items():
+                    self.db.settings.update_one({"_id": key}, {"$set": {"data": data}}, upsert=True)
 
-    def load_data(self) -> None:
-        try:
-            # --- Load from MongoDB ---
-            # Load items
-            self.items = {} # Clear existing memory first
-            for item_doc in self.db.items.find():
-                item_id = item_doc.get("_id")
-                entries = item_doc.get("entries")
-                # Basic validation
-                if isinstance(item_id, str) and isinstance(entries, list):
-                     # Further validation of entries if needed
-                     self.items[item_id] = entries
+                # Save limited sale history (limit size to prevent unbounded growth)
+                recent_history = self.sale_history[-1000:] # Keep last 1000 entries
+                self.db.settings.update_one(
+                    {"_id": "sale_history"},
+                    {"$set": {"data": recent_history}},
+                    upsert=True
+                )
+                self.sale_history = recent_history # Update in-memory list to match saved state
 
-            # Load settings from the 'settings' collection
-            settings_keys = ["user_earnings", "user_templates", "user_preferences", "sale_history"]
-            for key in settings_keys:
-                 doc = self.db.settings.find_one({"_id": key})
-                 if doc and "data" in doc:
-                      # Load into the correct attribute
-                      if key == "user_earnings": self.user_earnings = doc["data"]
-                      elif key == "user_templates": self.user_templates = doc["data"]
-                      elif key == "user_preferences": self.user_preferences = doc["data"]
-                      elif key == "sale_history": self.sale_history = doc["data"]
-                      # Add prices here if they become dynamic and stored in DB
+                logger.info("💾 Data saved to MongoDB")
+            except Exception as e:
+                logger.error(f"❌ MongoDB save error: {e}\n{traceback.format_exc()}")
+                # In critical failure, maybe attempt a local JSON dump as emergency fallback?
+                # self._emergency_local_save()
+                raise # Re-raise to indicate failure
 
-            logger.info("📂 Data loaded from MongoDB")
+        def load_data(self) -> None:
+            try:
+                # --- Load from MongoDB ---
+                # Load items
+                self.items = {} # Clear existing memory first
+                for item_doc in self.db.items.find():
+                    item_id = item_doc.get("_id")
+                    entries = item_doc.get("entries")
+                    # Basic validation
+                    if isinstance(item_id, str) and isinstance(entries, list):
+                         # Further validation of entries if needed
+                         self.items[item_id] = entries
 
-        except Exception as e:
-            logger.error(f"❌ MongoDB load error: {e}\n{traceback.format_exc()}")
-            # Consider loading from a local emergency backup if DB load fails?
-            # self._try_load_emergency_local()
-            raise # Re-raise error if critical data cannot be loaded
+                # Load settings from the 'settings' collection
+                settings_keys = ["user_earnings", "user_templates", "user_preferences", "sale_history", "predefined_prices"]
+                for key in settings_keys:
+                    doc = self.db.settings.find_one({"_id": key})
+                    if doc and "data" in doc:
+                    # Load into the correct attribute
+                        if key == "user_earnings": self.user_earnings = doc["data"]
+                        elif key == "user_templates": self.user_templates = doc["data"]
+                        elif key == "user_preferences": self.user_preferences = doc["data"]
+                        elif key == "sale_history": self.sale_history = doc["data"]
+                        elif key == "predefined_prices": self.predefined_prices = doc["data"]  # Load prices
+
+                logger.info("📂 Data loaded from MongoDB")
+
+            except Exception as e:
+                logger.error(f"❌ MongoDB load error: {e}\n{traceback.format_exc()}")
+                # Consider loading from a local emergency backup if DB load fails?
+                # self._try_load_emergency_local()
+                raise # Re-raise error if critical data cannot be loaded
 
 
     def load_config(self) -> None:
@@ -3747,6 +3755,7 @@ async def template_edit(interaction: discord.Interaction):
 bot.tree.add_command(template_group)
 
 
+# filepath: c:\Users\lukas\Desktop\New folder\bot\sonnet.py
 @bot.tree.command(name="price")
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(
@@ -3781,11 +3790,8 @@ async def change_price(
                     entry["price"] = new_price # Update the stored price
                     updated_stock_count += entry.get("quantity", 0)
 
-        # Save potentially changed prices and updated stock entries
-        shop_data.save_data() # Save everything for simplicity, includes price dict if it were dynamic
-        # Prices are static for now, so save_data mainly saves stock changes if update_existing=True
-        # Need to decide if predefined_prices should be saved to DB/Config if they change via command
-
+        # Save changes - this now persists prices to MongoDB
+        shop_data.save_data()
         await update_stock_message()
 
         embed = discord.Embed(title="⚙️ Price Updated (Admin)", color=COLORS['SUCCESS'])
@@ -4026,7 +4032,34 @@ async def bulk_add_visual(interaction: discord.Interaction, category: app_comman
         except Exception: pass
 
 
-@bot.tree.command(name="bulkadd", description="Add multiple items to stock via text input.")
+# filepath: c:\Users\lukas\Desktop\New folder\bot\sonnet.py
+# Replace this command entirely
+@bot.tree.command(name="bulkadd", description="Add multiple items to stock visually (by category).")
+@app_commands.guild_only()
+@app_commands.describe(category="Category of items to add")
+# Use choices based on item_categories keys
+@app_commands.choices(category=[
+    app_commands.Choice(name=cat.title(), value=cat) for cat in ShopData().item_categories.keys() # Temp instance OK here
+])
+async def bulk_add_visual(interaction: discord.Interaction, category: app_commands.Choice[str]):
+    """Add multiple items to your stock contribution using visual selection."""
+    try:
+        # Show the BulkAddView defined earlier
+        view = BulkAddView(category.value) # Pass category value
+        await interaction.response.send_message(
+            f"Select items from **{category.name}** to add to stock:", # Use choice name
+            view=view,
+            ephemeral=True
+        )
+    except Exception as e:
+        logger.error(f"Error in bulkadd command: {e}\n{traceback.format_exc()}")
+        try:
+            if not interaction.response.is_done():
+                 await interaction.response.send_message(f"❌ Error opening bulk add menu for {category.name}.", ephemeral=True)
+        except Exception: pass
+
+# Replace this command with the bulk add text version
+@bot.tree.command(name="bulkadd_text", description="Add multiple items to stock via text input.")
 @app_commands.guild_only()
 async def bulk_add_text(interaction: discord.Interaction):
      """Add multiple items to your stock contribution via text input."""
@@ -4034,7 +4067,7 @@ async def bulk_add_text(interaction: discord.Interaction):
         # Show the modal defined earlier
         await interaction.response.send_modal(BulkAddModal())
      except Exception as e:
-        logger.error(f"Error in bulkadd command: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error in bulkadd_text command: {e}\n{traceback.format_exc()}")
         try:
             if not interaction.response.is_done():
                  await interaction.response.send_message("❌ Error opening bulk add form.", ephemeral=True)
