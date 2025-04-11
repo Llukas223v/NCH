@@ -2321,157 +2321,155 @@ async def is_admin(interaction: discord.Interaction) -> bool:
 async def update_stock_message() -> None:
     """Updates the persistent stock message in the designated channel."""
     if not STOCK_CHANNEL_ID:
-        # logger.error("Stock channel ID not configured, cannot update message.") # Reduce log noise
         return
 
     channel = bot.get_channel(STOCK_CHANNEL_ID)
     if not isinstance(channel, discord.TextChannel):
         logger.error(f"❌ Cannot find stock channel or invalid channel type: {STOCK_CHANNEL_ID}")
-        shop_data.stock_message_id = None # Reset ID if channel invalid
+        shop_data.stock_message_ids = []
         shop_data.save_config()
         return
 
     # Check bot permissions in the channel
     perms = channel.permissions_for(channel.guild.me)
     if not perms.send_messages or not perms.read_message_history or not perms.manage_messages:
-         logger.error(f"❌ Bot lacks Send Messages, Read History, or Manage Messages permission in channel {STOCK_CHANNEL_ID}")
-         return
-
-
-    messages_content = []
-    timestamp = int(datetime.datetime.now().timestamp())
-    char_limit = 1950 # Safety margin below 2000
-
-    # Calculate total value before building messages
-    total_value = 0
-    for item_name in shop_data.get_all_items():
-        total_quantity = shop_data.get_total_quantity(item_name)
-        if total_quantity > 0:
-            price = shop_data.predefined_prices.get(item_name, 0)
-            item_value = total_quantity * price
-            total_value += item_value
-    logger.debug(f"Calculated total_value: {total_value}")
-
-    # Start the message with the stock value at the top
-    current_message = f"**📊 Current Shop Stock** (Updated: <t:{timestamp}:R>)\n"
-    current_message += f"💰 **Total Stock Value:** ${total_value:,}\n\n"
-
-    def get_category_order(category_name):
-        category_order = {
-            'bud': 1,    # Show buds first
-            'bag': 2,    # Bags second
-            'joint': 3,  # Joints third
-            'misc': 4,   # Misc fourth
-            'fish': 5,   # Fish fifth
-            'tebex': 6   # Tebex last
-        }
-        return category_order.get(category_name, 999)  # Default to end for unknown categories
-
-    # Sort categories using the custom order
-    sorted_categories = sorted(shop_data.item_categories.items(), key=lambda x: get_category_order(x[0]))
-
-    for category, category_items in sorted_categories:
-        category_header = f"{shop_data.category_emojis.get(category, '📦')} **{category.upper()}**\n"
-        category_block = "```ml\n"
-        # Adjust column widths if needed
-        category_block += f"{'Item':<18} {'Stock':>7} {'Price':>9} {'Value':>11} Status\n"
-        category_block += "─" * (18+7+9+11+8) + "\n" # Adjust separator length
-
-        has_items = False
-        category_value = 0
-        item_lines = []
-
-        def get_item_order(item_name):
-            # Define custom ordering within each category
-            category = shop_data.get_category_for_item(item_name)
-    
-            # Custom order for joints
-            if category == 'joint':
-                order_map = {
-                    'joint_ogkush': 1,      # Old Joint
-                    'joint_whitewidow': 2,  # Whacky Joint
-                    'joint_sourdiesel': 3,  # Sour Diesel Joint
-                    'joint_pineappleexpress': 4, # Smelly Joint
-                    'joint_khalifakush': 5, # Strange Joint
-                    'joint_sojokush': 6,    # Bizarre Joint
-                }
-                return order_map.get(item_name, 999)  # Default to end for unknown items
-    
-            # Custom order for buds
-            elif category == 'bud':
-                order_map = {
-                    'bud_ogkush': 1,      # Old Bud
-                    'bud_whitewidow': 2,  # Whacky Bud
-                    'bud_sourdiesel': 3,  # Sour Diesel Bud
-                    'bud_pineappleexpress': 4, # Smelly Bud
-                    'bud_khalifakush': 5, # Strange Bud
-                    'bud_sojokush': 6,    # Bizarre Bud
-                }
-                return order_map.get(item_name, 999)
-    
-            # Custom order for bags
-            elif category == 'bag':
-                order_map = {
-                    'bagof_ogkush': 1,      # Old Bag
-                    'bagof_whitewidow': 2,  # Whacky Bag
-                    'bagof_sourdiesel': 3,  # Sour Diesel Bag
-                    'bagof_pineappleexpress': 4, # Smelly Bag
-                    'bagof_khalifakush': 5, # Strange Bag
-                    'bagof_sojokush': 6,    # Bizarre Bag
-                }
-                return order_map.get(item_name, 999)
-    
-            # Default to alphabetical sorting by display name for other categories
-            else:
-                return shop_data.display_names.get(item_name, item_name)
-
-        # Use the custom sort function
-        sorted_items = sorted(category_items, key=get_item_order)
-
-        for item_name in sorted_items:
-            # No need to check shop_data.items - get_total_quantity handles it
-            total_quantity = shop_data.get_total_quantity(item_name)
-            if total_quantity > 0:
-                has_items = True
-                price = shop_data.predefined_prices.get(item_name, 0) # Use 0 if price somehow missing
-                item_value = total_quantity * price
-                category_value += item_value
-                display_name = shop_data.display_names.get(item_name, item_name)
-                low_threshold = shop_data.low_stock_thresholds.get(category, 0)
-
-                warning = ""
-                if low_threshold > 0:
-                    if total_quantity <= low_threshold: warning = "⚠️ LOW"
-                    elif total_quantity >= low_threshold * 3: warning = "📈 HIGH"
-
-                formatted_price = f"${price:,}" if price else "N/A"
-                formatted_value = f"${item_value:,}" if price else "N/A"
-                # Ensure alignment with potentially shorter/longer names
-                item_line = f"{display_name[:18]:<18} {total_quantity:>7,} {formatted_price:>9} {formatted_value:>11} {warning}\n"
-                item_lines.append(item_line)
-            logger.debug(f"Added {item_name} value: {item_value}, category_value now: {category_value}")
-
-        if not has_items:
-            category_block += "-- No stock in this category --\n"
-        else:
-            category_block += "".join(item_lines)
-
-        category_block += "```\n"
-        total_value += category_value
-        logger.debug(f"Added category {category} value: {category_value}, total_value now: {total_value}")
-
-        # Check if adding this whole category block exceeds limit
-        if len(current_message) + len(category_header) + len(category_block) > char_limit:
-            # Finish the current message and start a new one
-            messages_content.append(current_message)
-            current_message = category_header + category_block
-        else:
-            # Add to the current message
-            current_message += category_header + category_block
-
-    messages_content.append(current_message) # Add the last message
+        logger.error(f"❌ Bot lacks Send Messages, Read History, or Manage Messages permission in channel {STOCK_CHANNEL_ID}")
+        return
 
     try:
+        messages_content = []
+        timestamp = int(datetime.datetime.now().timestamp())
+        char_limit = 1950 # Safety margin below 2000
+
+        # Calculate total value before building messages
+        total_value = 0
+        for item_name in shop_data.get_all_items():
+            total_quantity = shop_data.get_total_quantity(item_name)
+            if total_quantity > 0:
+                price = shop_data.predefined_prices.get(item_name, 0)
+                item_value = total_quantity * price
+                total_value += item_value
+        logger.debug(f"Calculated total_value: {total_value}")
+
+        # Start the message with the stock value at the top
+        current_message = f"**📊 Current Shop Stock** (Updated: <t:{timestamp}:R>)\n"
+        current_message += f"💰 **Total Stock Value:** ${total_value:,}\n\n"
+
+        def get_category_order(category_name):
+            category_order = {
+                'bud': 1,    # Show buds first
+                'bag': 2,    # Bags second
+                'joint': 3,  # Joints third
+                'misc': 4,   # Misc fourth
+                'fish': 5,   # Fish fifth
+                'tebex': 6   # Tebex last
+            }
+            return category_order.get(category_name, 999)  # Default to end for unknown categories
+
+        # Sort categories using the custom order
+        sorted_categories = sorted(shop_data.item_categories.items(), key=lambda x: get_category_order(x[0]))
+
+        for category, category_items in sorted_categories:
+            category_header = f"{shop_data.category_emojis.get(category, '📦')} **{category.upper()}**\n"
+            category_block = "```ml\n"
+            # Adjust column widths if needed
+            category_block += f"{'Item':<18} {'Stock':>7} {'Price':>9} {'Value':>11} Status\n"
+            category_block += "─" * (18+7+9+11+8) + "\n" # Adjust separator length
+
+            has_items = False
+            category_value = 0
+            item_lines = []
+
+            def get_item_order(item_name):
+                # Define custom ordering within each category
+                category = shop_data.get_category_for_item(item_name)
+        
+                # Custom order for joints
+                if category == 'joint':
+                    order_map = {
+                        'joint_ogkush': 1,      # Old Joint
+                        'joint_whitewidow': 2,  # Whacky Joint
+                        'joint_sourdiesel': 3,  # Sour Diesel Joint
+                        'joint_pineappleexpress': 4, # Smelly Joint
+                        'joint_khalifakush': 5, # Strange Joint
+                        'joint_sojokush': 6,    # Bizarre Joint
+                    }
+                    return order_map.get(item_name, 999)  # Default to end for unknown items
+        
+                # Custom order for buds
+                elif category == 'bud':
+                    order_map = {
+                        'bud_ogkush': 1,      # Old Bud
+                        'bud_whitewidow': 2,  # Whacky Bud
+                        'bud_sourdiesel': 3,  # Sour Diesel Bud
+                        'bud_pineappleexpress': 4, # Smelly Bud
+                        'bud_khalifakush': 5, # Strange Bud
+                        'bud_sojokush': 6,    # Bizarre Bud
+                    }
+                    return order_map.get(item_name, 999)
+        
+                # Custom order for bags
+                elif category == 'bag':
+                    order_map = {
+                        'bagof_ogkush': 1,      # Old Bag
+                        'bagof_whitewidow': 2,  # Whacky Bag
+                        'bagof_sourdiesel': 3,  # Sour Diesel Bag
+                        'bagof_pineappleexpress': 4, # Smelly Bag
+                        'bagof_khalifakush': 5, # Strange Bag
+                        'bagof_sojokush': 6,    # Bizarre Bag
+                    }
+                    return order_map.get(item_name, 999)
+        
+                # Default to alphabetical sorting by display name for other categories
+                else:
+                    return shop_data.display_names.get(item_name, item_name)
+
+            # Use the custom sort function
+            sorted_items = sorted(category_items, key=get_item_order)
+
+            for item_name in sorted_items:
+                # No need to check shop_data.items - get_total_quantity handles it
+                total_quantity = shop_data.get_total_quantity(item_name)
+                if total_quantity > 0:
+                    has_items = True
+                    price = shop_data.predefined_prices.get(item_name, 0) # Use 0 if price somehow missing
+                    item_value = total_quantity * price
+                    category_value += item_value
+                    display_name = shop_data.display_names.get(item_name, item_name)
+                    low_threshold = shop_data.low_stock_thresholds.get(category, 0)
+
+                    warning = ""
+                    if low_threshold > 0:
+                        if total_quantity <= low_threshold: warning = "⚠️ LOW"
+                        elif total_quantity >= low_threshold * 3: warning = "📈 HIGH"
+
+                    formatted_price = f"${price:,}" if price else "N/A"
+                    formatted_value = f"${item_value:,}" if price else "N/A"
+                    # Ensure alignment with potentially shorter/longer names
+                    item_line = f"{display_name[:18]:<18} {total_quantity:>7,} {formatted_price:>9} {formatted_value:>11} {warning}\n"
+                    item_lines.append(item_line)
+                logger.debug(f"Added {item_name} value: {item_value}, category_value now: {category_value}")
+
+            if not has_items:
+                category_block += "-- No stock in this category --\n"
+            else:
+                category_block += "".join(item_lines)
+
+            category_block += "```\n"
+            total_value += category_value
+            logger.debug(f"Added category {category} value: {category_value}, total_value now: {total_value}")
+
+            # Check if adding this whole category block exceeds limit
+            if len(current_message) + len(category_header) + len(category_block) > char_limit:
+                # Finish the current message and start a new one
+                messages_content.append(current_message)
+                current_message = category_header + category_block
+            else:
+                # Add to the current message
+                current_message += category_header + category_block
+
+        messages_content.append(current_message) # Add the last message
+
         new_message_ids = []
         # Fetch existing messages with better handling for multiple messages
         old_message_ids = shop_data.stock_message_ids.copy()  # Work with a copy
@@ -2527,6 +2525,10 @@ async def update_stock_message() -> None:
             shop_data.stock_message_ids = new_message_ids
             shop_data.save_config()
             logger.info(f"📝 Updated stock message IDs: {new_message_ids}")
+            
+    except Exception as e:
+        logger.error(f"Error updating stock message: {e}")
+        return  # Return early on error
 
 
 async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: int) -> bool:
