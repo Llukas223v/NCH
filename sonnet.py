@@ -2092,12 +2092,20 @@ class ShopData:
             for key in settings_keys:
                 doc = self.db.settings.find_one({"_id": key})
                 if doc and "data" in doc:
-                # Load into the correct attribute
+                    # Load into the correct attribute
                     if key == "user_earnings": self.user_earnings = doc["data"]
                     elif key == "user_templates": self.user_templates = doc["data"]
                     elif key == "user_preferences": self.user_preferences = doc["data"]
                     elif key == "sale_history": self.sale_history = doc["data"]
-                    elif key == "predefined_prices": self.predefined_prices = doc["data"]  # Load prices
+                    # Special handling for predefined_prices to maintain static defaults
+                    elif key == "predefined_prices":
+                        # Get MongoDB prices
+                        mongodb_prices = doc["data"]
+                        # Update prices from MongoDB, but keep missing prices from static data
+                        # This ensures new items added to _load_static_data are preserved
+                        for item, price in mongodb_prices.items():
+                            self.predefined_prices[item] = price
+                        # Now self.predefined_prices has both static defaults and MongoDB saved prices
 
             logger.info("📂 Data loaded from MongoDB")
 
