@@ -1566,17 +1566,14 @@ class TemplateVisualItemButton(discord.ui.Button):
             await interaction.response.send_message("❌ Error setting item quantity.", ephemeral=True)
 
 class TemplateVisualQuantityModal(discord.ui.Modal):
-    def __init__(self, item_name, parent_view):
+    def __init__(self, item_name, parent_view): 
         self.item_name = item_name
         self.parent_view = parent_view
         display_name = shop_data.display_names.get(item_name, item_name)
-        
         super().__init__(title=f"Set Qty for {display_name}")
 
-        # Get current quantity if any
         current_qty = parent_view.selected_items.get(item_name, 0)
 
-        # Add quantity input field
         self.quantity_input = discord.ui.TextInput(
             label=f"Quantity (0 to remove)",
             placeholder="Enter amount",
@@ -1587,21 +1584,24 @@ class TemplateVisualQuantityModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
+            # Defer immediately to prevent timeout
+            await interaction.response.defer(ephemeral=True)
+
             # Parse quantity
             try:
                 quantity = int(self.quantity_input.value)
                 if quantity < 0:
-                    await interaction.response.send_message("❌ Quantity cannot be negative.", ephemeral=True)
+                    await interaction.followup.send("❌ Quantity cannot be negative.", ephemeral=True)
                     return
             except ValueError:
-                await interaction.response.send_message("❌ Please enter a valid number.", ephemeral=True)
+                await interaction.followup.send("❌ Please enter a valid number.", ephemeral=True)
                 return
-                
-            # Update quantity in parent view's selected_items
+
+            # Update the parent view's selection state
             self.parent_view.selected_items[self.item_name] = quantity
             display_name = shop_data.display_names.get(self.item_name, self.item_name)
             
-            # Recreate the item view with updated buttons
+            # Create new item view with updated selection state
             new_item_view = TemplateVisualItemView(
                 self.parent_view.template_name,
                 self.parent_view.category,
@@ -1609,115 +1609,43 @@ class TemplateVisualQuantityModal(discord.ui.Modal):
                 self.parent_view.user_id_str
             )
             
-            # Show a confirmation embed
+            # Create embed showing the update
             embed = discord.Embed(
-                title=f"✅ Updated: {display_name}",
-                description=f"Quantity set to: **{quantity:,}**",
+                title=f"✓ Item Updated: {display_name}",
+                description=f"Quantity set to **{quantity:,}**",
                 color=COLORS['SUCCESS']
             )
             
-            # Update the message with the new view
-            try:
-                await interaction.followup.send(
-                    content=f"Updated {display_name} quantity to {quantity}. Continue selecting items.",
-                    ephemeral=True
-                )
-            except Exception as e:
-                logger.error(f"Error sending followup: {e}")
-            
-        except Exception as e:
-            logger.error(f"Error in TemplateVisualQuantityModal on_submit: {e}\n{traceback.format_exc()}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message("❌ An unexpected error occurred.", ephemeral=True)
-
-
-class TemplateVisualQuantityModal(discord.ui.Modal):
-    def __init__(self, item_name, parent_view: TemplateVisualItemView): # Type hint parent
-        self.item_name = item_name
-        self.parent_view = parent_view
-        display_name = shop_data.display_names.get(item_name, item_name)
-        super().__init__(title=f"Set Qty for {display_name}")
-
-        current_qty = parent_view.selected_items.get(item_name, 0)
-
-        self.quantity_input = discord.ui.TextInput( # Renamed
-            label=f"Quantity (0 to remove)",
-            placeholder="Enter amount",
-            required=True,
-            default=str(current_qty) if current_qty > 0 else ""
-        )
-        self.add_item(self.quantity_input)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        # This interaction edits the message showing the TemplateVisualItemView
-        original_message = interaction.message
-        try:
-            # Defer modal submission but allow editing original message
-            await interaction.response.defer(ephemeral=False)
-
-            quantity = int(self.quantity_input.value)
-            if quantity < 0:
-                await interaction.followup.send("❌ Quantity cannot be negative.", ephemeral=True)
-                return
-
-            # Update the parent view's selection state
-            self.parent_view.selected_items[self.item_name] = quantity
-
-            # --- Recreate the Item View with updated buttons ---
-            # This is necessary because we need to change button labels/styles
-            new_item_view = TemplateVisualItemView(
-                self.parent_view.template_name,
-                self.parent_view.category,
-                self.parent_view.selected_items,
-                self.parent_view.user_id_str # Pass user ID along
-            )
-            # --- ---
-
-            # Create embed confirming the change
-            display_name = shop_data.display_names.get(self.item_name, self.item_name)
-            embed = discord.Embed(color=COLORS['SUCCESS'])
-            if quantity > 0:
-                 embed.title = f"✅ Set {display_name} to {quantity:,}"
-            else:
-                 embed.title = f"ℹ️ Removed {display_name} from template"
-
             # Add summary of current selections in this category
-            current_category_items = []
+            category_items = []
             category_value = 0
             for item, qty in self.parent_view.selected_items.items():
                 if qty > 0 and shop_data.get_category_for_item(item) == self.parent_view.category:
-                    d_name = shop_data.display_names.get(item, item)
-                    price = shop_data.predefined_prices.get(item, 0) * qty
-                    category_value += price
-                    current_category_items.append(f"{d_name}: {qty:,} (${price:,})")
-
-            if current_category_items:
-                field_value = "\n".join(sorted(current_category_items))
-                if len(field_value) > 1020: field_value = field_value[:1020] + "..."
+                    item_display = shop_data.display_names.get(item, item)
+                    item_price = shop_data.predefined_prices.get(item, 0)
+                    item_value = qty * item_price
+                    category_value += item_value
+                    category_items.append(f"{item_display}: {qty:,} (${item_value:,})")
+            
+            if category_items:
                 embed.add_field(
-                    name=f"Current {self.parent_view.category.title()} Selections (${category_value:,})",
-                    value=field_value,
+                    name=f"Current {self.parent_view.category.title()} Items (${category_value:,})",
+                    value="\n".join(sorted(category_items)),
                     inline=False
                 )
-
-            # Edit the message showing the item list
-            if original_message:
-                await original_message.edit(
-                    content=f"Select items from **{self.parent_view.category.title()}** for template '{self.parent_view.template_name}':",
-                    embed=embed,
-                    view=new_item_view # Show the view with updated buttons
-                )
-            else:
-                 logger.warning("TemplateVisualQuantityModal: Could not find original message to edit.")
-
-            # Send ephemeral followup for the modal itself
-            await interaction.followup.send(f"Updated {display_name}.", ephemeral=True)
-
-        except ValueError:
-            await interaction.followup.send("❌ Please enter a valid number (0 or positive).", ephemeral=True)
+            
+            # CHANGE: Use followup.send with the new view instead of trying to edit the original message
+            await interaction.followup.send(
+                content=f"Select items from **{self.parent_view.category.title()}** for template '{self.parent_view.template_name}':",
+                embed=embed,
+                view=new_item_view,
+                ephemeral=True
+            )
+            
         except Exception as e:
             logger.error(f"Error in TemplateVisualQuantityModal on_submit: {e}\n{traceback.format_exc()}")
             await interaction.followup.send("❌ An unexpected error occurred.", ephemeral=True)
+
 
 
 class CategoryView(discord.ui.View):
@@ -2599,20 +2527,6 @@ async def update_stock_message() -> None:
             shop_data.stock_message_ids = new_message_ids
             shop_data.save_config()
             logger.info(f"📝 Updated stock message IDs: {new_message_ids}")
-            try:
-                old_message = await channel.fetch_message(old_message_id)
-            except discord.NotFound:
-                logger.warning(f"Stock message {old_message_id} not found. Will send new.")
-                shop_data.stock_message_id = None # Clear invalid ID
-            except discord.Forbidden:
-                logger.error(f"No permission to fetch stock message {old_message_id}.")
-                shop_data.stock_message_id = None
-            except Exception as fetch_err:
-                logger.error(f"Error fetching old stock message {old_message_id}: {fetch_err}")
-                shop_data.stock_message_id = None
-    except Exception as e:
-        logger.error(f"Error updating stock message: {e}")
-        return  # Return early on error
 
 
 async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: int) -> bool:
