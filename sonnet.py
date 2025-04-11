@@ -1457,9 +1457,13 @@ class TemplateVisualCategoryView(discord.ui.View):
 
             # Edit the original message to show the final saved state and remove buttons
             if original_message:
-                await original_message.edit(content=f"Template **{self.template_name}** saved successfully!", embed=embed, view=None)
+                await interaction.followup.send(
+                    content=f"Template **{self.template_name}** saved successfully!",
+                    embed=embed,
+                    ephemeral=True
+                )
             else:
-                 logger.warning("Could not find original message to edit after saving template.")
+                logger.warning("Could not find original message to edit after saving template.")
 
             await interaction.followup.send(f"Template '{self.template_name}' saved!", ephemeral=True)
 
@@ -1613,11 +1617,13 @@ class TemplateVisualQuantityModal(discord.ui.Modal):
             )
             
             # Update the message with the new view
-            await interaction.response.edit_message(
-                content=f"Select items from **{self.parent_view.category.title()}** for template '{self.parent_view.template_name}':",
-                embed=embed,
-                view=new_item_view
-            )
+            try:
+                await interaction.followup.send(
+                    content=f"Updated {display_name} quantity to {quantity}. Continue selecting items.",
+                    ephemeral=True
+                )
+            except Exception as e:
+                logger.error(f"Error sending followup: {e}")
             
         except Exception as e:
             logger.error(f"Error in TemplateVisualQuantityModal on_submit: {e}\n{traceback.format_exc()}")
