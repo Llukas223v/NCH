@@ -219,7 +219,7 @@ class BulkAddModal(discord.ui.Modal, title="Bulk Add Items"):
 
 class BulkRemoveModal(discord.ui.Modal, title="Bulk Remove Items"):
     items_input = discord.ui.TextInput(
-        label="Items (Format: item:qty or qty item, new line/comma)",
+        label="Items (Format: item:qty, new line/comma)",  # Shortened label to under 45 chars
         style=discord.TextStyle.paragraph,
         placeholder="bud_sojokush: 50\n25 joint_khalifakush, whacky_bud:10",
         required=True,
@@ -386,10 +386,7 @@ class BulkQuantityModal(discord.ui.Modal):
         try:
             # Defer the response but keep it ephemeral
             await interaction.response.defer(ephemeral=True)
-            
-            # Get the original message that showed the BulkAddView
-            original_message = interaction.message
-            
+        
             # Parse quantity
             try:
                 quantity = int(self.quantity_input.value)
@@ -403,11 +400,11 @@ class BulkQuantityModal(discord.ui.Modal):
             # Update selected items in parent view
             self.parent_view.selected_items[self.item_name] = quantity
             display_name = shop_data.display_names.get(self.item_name, self.item_name)
-            
-            # Build embed with selected items
+        
+        # Build embed with selected items
             items_text_lines = []
             total_session_value = 0
-            
+        
             for item, qty in self.parent_view.selected_items.items():
                 if qty > 0:
                     item_display_name = shop_data.display_names.get(item, item)
@@ -428,20 +425,21 @@ class BulkQuantityModal(discord.ui.Modal):
                 color=COLORS['INFO']
             )
             embed.add_field(name="Selected Items for this Session", value=items_text, inline=False)
-            
+        
             # Update button visual state
             for button in self.parent_view.children:
                 if isinstance(button, BulkItemSelectButton) and button.item_name == self.item_name:
                     button.label = f"{display_name} ({quantity:,})" if quantity > 0 else display_name
                     button.style = discord.ButtonStyle.success if quantity > 0 else discord.ButtonStyle.gray
-            
-            # Edit original message with updated view
-            if original_message:
-                await original_message.edit(embed=embed, view=self.parent_view)
-            
-            # Send confirmation
-            await interaction.followup.send(f"Set {display_name} quantity to {quantity}.", ephemeral=True)
-            
+        
+        # CHANGE: Send a new message instead of editing the original
+            await interaction.followup.send(
+                content=f"Updated {display_name} quantity to {quantity}. Return to previous screen to continue selecting.",
+                embed=embed,
+                view=self.parent_view,
+                ephemeral=True
+            )
+        
         except Exception as e:
             logger.error(f"Error in BulkQuantityModal on_submit: {e}\n{traceback.format_exc()}")
             await interaction.followup.send("❌ An unexpected error occurred setting quantity.", ephemeral=True)
@@ -852,75 +850,107 @@ class TemplateVisualCategoryView(discord.ui.View):
         self.selected_items = {}  # Initialize as empty dict
         self.user_id_str = None   # Will be set when view is created
 
+    # Fix for TemplateVisualCategoryView.save_template method
     async def save_template(self, interaction: discord.Interaction):
-        # This interaction edits the original message (which showed the editor)
-        original_message = interaction.message
-        await interaction.response.defer(ephemeral=True) # Defer the button click
+        await interaction.response.defer(ephemeral=True)
 
         try:
-            if not self.user_id_str: # Ensure user context is available
+            if not self.user_id_str:
                 logger.error("Cannot save template: user_id_str not set in view.")
                 await interaction.followup.send("❌ Error: User context lost. Cannot save.", ephemeral=True)
                 return
 
-            user = self.user_id_str # Use the stored user ID
-            
-            # Get user templates, initializing if needed
-            if user not in shop_data.user_templates:
-                shop_data.user_templates[user] = {}
-                
-            # Get the current template if it exists
+            user = self.user_id_str
             original_items = shop_data.user_templates.get(user, {}).get(self.template_name, {}).copy()
-
-            # Filter out items with quantity <= 0
             new_template_data = {item: qty for item, qty in self.selected_items.items() if qty > 0}
 
-            # Save the updated template
+            if user not in shop_data.user_templates:
+                shop_data.user_templates[user] = {}
             shop_data.user_templates[user][self.template_name] = new_template_data
             shop_data.save_data()
 
             logger.info(f"User '{user}' saved template '{self.template_name}'")
 
             # Create confirmation embed
-            embed = discord.Embed(
-                title=f"✅ Template Saved: {self.template_name}",
-                description=f"Template saved with **{len(new_template_data)}** items.",
-                color=COLORS['SUCCESS']
+            embed = self.create_current_selection_embed()
+            embed.color = COLORS['SUCCESS']
+            is_edit = bool(original_items)
+            action_word = "Updated" if is_edit else "Saved"
+            embed.title = f"✅ Template {action_word}: {self.template_name}"
+
+            # CHANGE: Instead of editing original message (which often fails), send a new message
+            await interaction.followup.send(
+                content=f"Template **{self.template_name}** saved successfully!",
+                embed=embed, 
+                ephemeral=True
             )
-
-            # Add items to embed
-            items_text = []
-            total_value = 0
-            for item, qty in new_template_data.items():
-                display_name = shop_data.display_names.get(item, item)
-                price = shop_data.predefined_prices.get(item, 0)
-                value = qty * price
-                total_value += value
-                items_text.append(f"{display_name}: {qty:,} (${value:,})")
-                
-            if items_text:
-                embed.add_field(
-                    name="Template Items", 
-                    value="```\n" + "\n".join(sorted(items_text)) + "```", 
-                    inline=False
-                )
-                embed.add_field(name="Total Template Value", value=f"${total_value:,}", inline=False)
-            else:
-                embed.add_field(name="Template Items", value="No items in template.", inline=False)
-
-            # Edit the original message to show success
-            if original_message:
-                await original_message.edit(content=f"Template **{self.template_name}** saved successfully!", embed=embed, view=None)
-            else:
-                logger.warning("Could not find original message to edit after saving template.")
-
-            await interaction.followup.send(f"Template '{self.template_name}' saved!", ephemeral=True)
 
         except Exception as e:
             logger.error(f"Error saving template '{self.template_name}': {e}\n{traceback.format_exc()}")
             await interaction.followup.send("❌ An unexpected error occurred while saving the template.", ephemeral=True)
 
+# Add this class definition (it's referenced but was removed or missing)
+# Add this class definition (it's referenced but was removed or missing)
+class TemplateConfirmView(discord.ui.View):
+    def __init__(self, template_name):
+        super().__init__(timeout=180)
+        self.template_name = template_name
 
+    @discord.ui.button(label="✅ Apply Template & Add Stock", style=discord.ButtonStyle.success)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            user = str(interaction.user)
+            template = shop_data.get_user_templates(user).get(self.template_name, {})
+
+            if not template:
+                await interaction.followup.send(f"❌ Template '{self.template_name}' not found or empty.", ephemeral=True)
+                return
+
+            added_items_count = 0
+            total_value_added = 0
+            total_quantity_added = 0
+            item_details = []
+
+            for item, quantity in template.items():
+                if quantity <= 0 or not shop_data.is_valid_item(item):
+                    continue
+
+                price = shop_data.predefined_prices.get(item, 0)
+                value = quantity * price
+                
+                shop_data.add_item(item, quantity, user)
+                shop_data.add_to_history("add_template", item, quantity, price, user)
+                
+                display_name = shop_data.display_names.get(item, item)
+                item_details.append(f"{display_name}: {quantity:,} (${value:,})")
+                added_items_count += 1
+                total_value_added += value
+                total_quantity_added += quantity
+
+            if added_items_count > 0:
+                shop_data.save_data()
+                await update_stock_message()
+
+                embed = discord.Embed(
+                    title=f"✅ Applied Template: {self.template_name}",
+                    description=f"Added **{added_items_count}** item types ({total_quantity_added:,} total) worth **${total_value_added:,}**.",
+                    color=COLORS['SUCCESS']
+                )
+                
+                details_str = "```\n" + "\n".join(sorted(item_details)) + "```"
+                embed.add_field(name="Items Added", value=details_str, inline=False)
+                
+                # Send new message instead of editing (which is unreliable)
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ No valid items found in template '{self.template_name}'.", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error in TemplateConfirmView confirm_button: {e}\n{traceback.format_exc()}")
+            await interaction.followup.send("❌ An unexpected error occurred while applying the template.", ephemeral=True)
+            
 class TemplateNameModal(discord.ui.Modal):
     def __init__(self, existing_name: Optional[str] = None, is_edit: bool = False):
         self.existing_name = existing_name
