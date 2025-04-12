@@ -2452,7 +2452,7 @@ async def update_stock_message() -> None:
                     else:
                         warning = "✅"  # Default to checkmark if no threshold set
             
-                    # Format the item line with the status indicator
+                    # Format the item line with the status indicator/add
                     formatted_price = f"${price:,}" if price else "N/A"
                     formatted_value = f"${item_value:,}" if price else "N/A"
                     item_line = f"{display_name[:18]:<18} {total_quantity:>7,} {formatted_price:>9} {formatted_value:>11} {warning}\n"
@@ -4258,6 +4258,7 @@ async def on_message(message: discord.Message):
                     item_name = item_pattern.group(2).lower()
                 else:
                     logger.warning(f"Could not extract item name from webhook message: {message_text[:200]}...")
+                    await message.add_reaction("⚠️")  # Add warning reaction if parsing failed
                     return
             else:
                 item_name = item_pattern.group(1).lower()
@@ -4278,6 +4279,7 @@ async def on_message(message: discord.Message):
             
             if not profit_pattern:
                 logger.warning(f"Could not extract profit amount from webhook message: {message_text[:200]}...")
+                await message.add_reaction("⚠️")  # Add warning reaction if parsing failed
                 return
                 
             # Handle commas in profit number
@@ -4294,11 +4296,17 @@ async def on_message(message: discord.Message):
             
             if success:
                 logger.info(f"✅ Successfully processed webhook sale of {quantity}x {item_name}")
+                await message.add_reaction("✅")  # Add checkmark reaction for successful sale
             else:
                 logger.error(f"❌ Failed to process webhook sale of {quantity}x {item_name}")
+                await message.add_reaction("❌")  # Add X reaction for failed sale
                 
         except Exception as e:
             logger.error(f"Error processing webhook sale: {e}\n{traceback.format_exc()}")
+            try:
+                await message.add_reaction("⚠️")  # Add warning reaction for errors
+            except Exception:
+                pass  # Silently ignore if adding reaction fails after error
     
     else:
         # Process normal commands
