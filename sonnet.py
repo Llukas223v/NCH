@@ -2428,32 +2428,33 @@ async def update_stock_message() -> None:
             sorted_items = sorted(category_items, key=get_item_order)
 
             for item_name in sorted_items:
-                # No need to check shop_data.items - get_total_quantity handles it
+                # Get total quantity for this item
                 total_quantity = shop_data.get_total_quantity(item_name)
                 if total_quantity > 0:
                     has_items = True
-                    price = shop_data.predefined_prices.get(item_name, 0) # Use 0 if price somehow missing
+                    price = shop_data.predefined_prices.get(item_name, 0)
                     item_value = total_quantity * price
                     category_value += item_value
                     display_name = shop_data.display_names.get(item_name, item_name)
+
+                    # Get the threshold for this item's category
+                    category = shop_data.get_category_for_item(item_name)
                     low_threshold = shop_data.low_stock_thresholds.get(category, 0)
-
-                    # REVISED: Make sure warning is always set to something, even if threshold is 0
+            
+                    # Determine status indicator
                     if low_threshold > 0:
-                        if total_quantity <= low_threshold: 
-                            warning = "⚠️" # Add warning symbol for low stock
-                        elif total_quantity >= low_threshold * 3: 
-                            warning = "📈" # Add high stock indicator
+                        if total_quantity <= low_threshold:
+                            warning = "⚠️"  # Warning for low stock
+                        elif total_quantity >= low_threshold * 3:
+                            warning = "📈"  # High stock indicator
                         else:
-                            warning = "✅" # Add checkmark for normal stock level
+                            warning = "✅"  # Normal stock level
                     else:
-                        warning = "✅" # Default to checkmark if no threshold is set
-
-                    logger.debug(f"Item: {item_name}, Qty: {total_quantity}, Low threshold: {low_threshold}, Status: {warning}")
-
+                        warning = "✅"  # Default to checkmark if no threshold set
+            
+                    # Format the item line with the status indicator
                     formatted_price = f"${price:,}" if price else "N/A"
                     formatted_value = f"${item_value:,}" if price else "N/A"
-                    # Ensure alignment with potentially shorter/longer names
                     item_line = f"{display_name[:18]:<18} {total_quantity:>7,} {formatted_price:>9} {formatted_value:>11} {warning}\n"
                     item_lines.append(item_line)
 
