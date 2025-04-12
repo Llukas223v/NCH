@@ -4234,25 +4234,44 @@ async def on_message(message: discord.Message):
         else:
             message_text = message.content
 
-        # Check if this is a purchase notification
-        if "[PURCHASE INFO]" not in message_text:
+        # Check if this contains purchase information (no longer looking for "[PURCHASE INFO]")
+        if "purchased for" not in message_text and "Name:" not in message_text:
             return
 
         logger.info("Processing purchase webhook...")
         
         try:
-            # Extract sale details using regex
-            item_pattern = re.search(r"Name: ([a-z_]+)", message_text, re.IGNORECASE)
-            amount_pattern = re.search(r"Amount: (\d+)", message_text, re.IGNORECASE)
-            profit_pattern = re.search(r"Profit: \$?([\d,]+)", message_text, re.IGNORECASE)
+            # Updated regex patterns to match the actual webhook format
+            item_pattern = re.search(r"Name:\s*\*\*([a-z_]+)\*\*", message_text, re.IGNORECASE)
+            if not item_pattern:
+                # Try alternate format that might be in the message
+                item_pattern = re.search(r"(\d+)x\s+([a-z_]+)\s+purchased", message_text, re.IGNORECASE)
+                if item_pattern:
+                    item_name = item_pattern.group(2).lower()
+                else:
+                    logger.warning(f"Could not extract item name from webhook message: {message_text[:200]}...")
+                    return
+            else:
+                item_name = item_pattern.group(1).lower()
             
-            if not (item_pattern and amount_pattern and profit_pattern):
-                logger.warning(f"Could not extract all sale details from webhook message: {message_text[:200]}...")
+            # Find quantity - try different patterns
+            amount_pattern = re.search(r"(\d+)x", message_text, re.IGNORECASE)
+            if not amount_pattern:
+                # Default to 1 if no quantity found
+                quantity = 1
+                logger.warning("No quantity found in webhook, assuming 1 item sold")
+            else:
+                quantity = int(amount_pattern.group(1))
+            
+            # Look for profit amount with more flexible patterns
+            profit_pattern = re.search(r"Profit:\s*\*\*\$?([\d,]+)\*\*", message_text, re.IGNORECASE)
+            if not profit_pattern:
+                profit_pattern = re.search(r"purchased for \$?([\d,]+)", message_text, re.IGNORECASE)
+            
+            if not profit_pattern:
+                logger.warning(f"Could not extract profit amount from webhook message: {message_text[:200]}...")
                 return
                 
-            item_name = item_pattern.group(1).lower()
-            quantity = int(amount_pattern.group(1))
-            
             # Handle commas in profit number
             profit_str = profit_pattern.group(1).replace(",", "")
             total_profit = int(profit_str)
