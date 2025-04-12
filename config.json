@@ -1,5 +1,5 @@
 {
-  "stock_message_id": 1358240621424545833,
+  "stock_message_ids": [1358240621424545833],
   "low_stock_thresholds": {
     "bud": 50,
     "joint": 100,
