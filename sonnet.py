@@ -2440,8 +2440,12 @@ async def update_stock_message() -> None:
 
                     warning = ""
                     if low_threshold > 0:
-                        if total_quantity <= low_threshold: warning = "⚠️ LOW"
-                        elif total_quantity >= low_threshold * 3: warning = "📈 HIGH"
+                        if total_quantity <= low_threshold: 
+                            warning = "⚠️" # Add warning symbol for low stock
+                        elif total_quantity >= low_threshold * 3: 
+                            warning = "📈" # Add high stock indicator
+                        else:
+                            warning = "✅" # Add checkmark for normal stock level
 
                     formatted_price = f"${price:,}" if price else "N/A"
                     formatted_value = f"${item_value:,}" if price else "N/A"
