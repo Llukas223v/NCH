@@ -2532,8 +2532,7 @@ async def update_stock_message() -> None:
 
 
 async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: int) -> bool:
-    """Processes a sale, removing stock FIFO globally and crediting users."""
-    # Ensure item_name is normalized? Assumes caller normalized it.
+    """Processes a sale, removing stock FIFO globally and crediting users based on actual sale price."""
     display_name = shop_data.display_names.get(item_name, item_name)
     logger.info(f"🛒 PROCESSING SALE: {quantity_sold}x {display_name} @ ${sale_price_per_item:,} each")
 
@@ -2541,36 +2540,61 @@ async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: 
         logger.error(f"❌ Sale failed: Invalid item '{item_name}'")
         return False
 
-    # Use the ShopData method to get total quantity
     total_stock = shop_data.get_total_quantity(item_name)
-
     if total_stock < quantity_sold:
         logger.error(f"❌ Sale failed: Not enough stock for {display_name} (Need: {quantity_sold}, Have: {total_stock})")
         return False
 
-    # Get all stock entries for this item, ready for processing
-    # Ensure we have a mutable list of dictionaries
-    stock_entries = [dict(entry) for entry in shop_data.items.get(item_name, []) if isinstance(entry, dict) and entry.get('quantity', 0) > 0]
+    # Get all stock entries for this item
+    stock_entries = [dict(entry) for entry in shop_data.items.get(item_name, []) 
+                     if isinstance(entry, dict) and entry.get('quantity', 0) > 0]
 
     if not stock_entries:
-        logger.error(f"❌ Sale failed: No valid stock entries found for {display_name} despite total_stock > 0 (data inconsistency?)")
+        logger.error(f"❌ Sale failed: No valid stock entries found for {display_name}")
         return False
 
-    # Sort entries globally by date (oldest first) for FIFO
+    # Sort entries by date (oldest first) for FIFO
     stock_entries.sort(key=lambda x: x.get('date', '9999-99-99'))
 
     remaining_to_sell = quantity_sold
-    processed_indices = set() # Track original indices to update/remove later
-    earnings_updates: Dict[str, int] = {} # Track earnings per user for this sale
-
-    # Find original indices (needed because we're working on a sorted copy)
+    processed_indices = set()
+    earnings_updates = {}
+    
+    # Calculate total sale value from webhook price
+    total_sale_value = quantity_sold * sale_price_per_item
+    logger.info(f"💰 Total sale value from webhook: ${total_sale_value:,}")
+    
+    # Find original indices
     original_indices = {}
     for i, entry in enumerate(shop_data.items.get(item_name, [])):
-        # Use consistent attributes to make a key
         if isinstance(entry, dict):
             key = (entry.get('person'), entry.get('date'), entry.get('price'), entry.get('quantity'))
             original_indices[key] = i
 
+    # Track total quantity being sold to calculate proportions
+    total_quantity_processed = 0
+    proportional_earnings = {}
+
+    # First pass: Calculate proportion of each user's contribution
+    for entry in stock_entries:
+        if remaining_to_sell <= 0:
+            break
+
+        sell_amount = min(entry['quantity'], remaining_to_sell)
+        user = entry.get('person')
+        if not user:
+            logger.warning(f"Stock entry missing 'person' field: {entry}. Skipping.")
+            continue
+
+        # Track this user's proportion of the sale
+        proportional_earnings[user] = proportional_earnings.get(user, 0) + sell_amount
+        total_quantity_processed += sell_amount
+        remaining_to_sell -= sell_amount
+
+    # Reset and process again to update quantities
+    remaining_to_sell = quantity_sold
+    
+    # Second pass: Update quantities and distribute earnings by proportion
     for entry in stock_entries:
         if remaining_to_sell <= 0:
             break
@@ -2578,56 +2602,57 @@ async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: 
         key = (entry.get('person'), entry.get('date'), entry.get('price'), entry.get('quantity'))
         original_index = original_indices.get(key)
         if original_index is None:
-             logger.error(f"Could not find original index for entry: {entry}. Skipping.")
-             continue # Should not happen if logic is correct
+            continue
 
         sell_amount = min(entry['quantity'], remaining_to_sell)
         user = entry.get('person')
-        original_price = entry.get('price', 0) # Price the user stocked it at
-
         if not user:
-             logger.warning(f"Stock entry missing 'person' field: {entry}. Skipping.")
-             continue
+            continue
 
-        logger.info(f"📦 Taking {sell_amount} of {display_name} from {user}'s stock (added {entry.get('date', 'N/A')})")
-
-        # Update quantity in the original list using the index
+        # Update quantity in original list
         shop_data.items[item_name][original_index]['quantity'] -= sell_amount
         processed_indices.add(original_index)
-
-        # Calculate earnings based on the price *they stocked it at*
-        sale_value = sell_amount * original_price
-        earnings_updates[user] = earnings_updates.get(user, 0) + sale_value
-        logger.info(f"💰 Crediting ${sale_value:,} to {user} (Item cost: ${original_price:,})")
+        
+        # Calculate earnings based on proportion of total sale value
+        user_proportion = proportional_earnings[user] / total_quantity_processed
+        user_earnings = total_sale_value * (sell_amount / total_quantity_processed)
+        
+        # Debug logging for this specific sale proportion
+        logger.debug(f"DEBUG: Earnings calculation for {user}")
+        logger.debug(f"DEBUG: - sale_price_per_item: ${sale_price_per_item:,}")
+        logger.debug(f"DEBUG: - sell_amount: {sell_amount}")
+        logger.debug(f"DEBUG: - total_quantity_processed: {total_quantity_processed}")
+        logger.debug(f"DEBUG: - proportion: {sell_amount}/{total_quantity_processed} = {sell_amount/total_quantity_processed}")
+        logger.debug(f"DEBUG: - user_earnings: ${user_earnings:,.2f}")
+        
+        earnings_updates[user] = earnings_updates.get(user, 0) + user_earnings
+        logger.info(f"💰 Crediting ${user_earnings:,.2f} to {user} for {sell_amount}x {display_name}")
 
         remaining_to_sell -= sell_amount
 
-    # Update global earnings and clean up zero-quantity items
+    # Update global earnings and clean up
     if remaining_to_sell == 0:
         for user, amount in earnings_updates.items():
             shop_data.user_earnings[user] = shop_data.user_earnings.get(user, 0) + amount
 
-        # Clean up zero quantity entries *after* processing all deductions for this sale
+        # Clean up zero quantity entries
         shop_data.items[item_name] = [
-            entry for i, entry in enumerate(shop_data.items.get(item_name, []))
+            entry for entry in shop_data.items.get(item_name, [])
             if entry.get('quantity', 0) > 0
         ]
 
-        # Record the sale in history (using the actual sale price per item)
+        # Record the sale in history with the actual webhook price
         shop_data.add_to_history("sale", item_name, quantity_sold, sale_price_per_item, "customer")
-
-        shop_data.save_data() # Save all changes
-        await update_stock_message() # Update stock display
-        logger.info(f"✅ Sale completed: {quantity_sold}x {display_name}")
+        shop_data.save_data()
+        
+        await update_stock_message()
+        logger.info(f"✅ Sale completed: {quantity_sold}x {display_name} at ${sale_price_per_item:,} each")
         return True
     else:
-        # This indicates a logic error if the initial stock check passed
-        logger.error(f"❌ Sale logic error: Could not fulfill sale of {quantity_sold}x {display_name}. Remaining needed: {remaining_to_sell}. Rolling back changes for this item is complex, state might be inconsistent.")
-        # For simplicity, we don't automatically roll back here, but log the error.
-        # A more robust system might store changes temporarily and commit/rollback.
+        logger.error(f"❌ Sale logic error: Could not fulfill sale of {quantity_sold}x {display_name}")
         return False
 
-
+    
 async def item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
     """Autocomplete for item names based on display name."""
     choices = []
@@ -4197,102 +4222,60 @@ async def on_message(message: discord.Message):
     if message.author == bot.user:
         return
 
-    # --- Webhook Processing ---
-    # Be specific about which webhook(s) to process
-    # Example: Check webhook ID or author name if possible/consistent
-    # if message.webhook_id == EXPECTED_WEBHOOK_ID:
-    # Or: if message.webhook_id and "Specific Webhook Name" in message.author.name:
-    if message.webhook_id: # General check for any webhook for now
-        logger.info(f"📨 Received webhook message (ID: {message.webhook_id}) from '{message.author.name}' in #{message.channel.name}")
+    # Process webhook messages
+    if message.webhook_id:
+        logger.info(f"📨 Received webhook message from '{message.author.name}' in #{message.channel.name}")
 
         # Get message content (prefer embed description if available)
         message_text = ""
         if message.embeds:
             embed = message.embeds[0]
-            if embed.description:
-                 message_text = embed.description
-            # Optionally check other fields like title or fields if format varies
-            # elif embed.title and "Purchase Info" in embed.title: ...
-            else: # Fallback to content if embed has no description
-                 message_text = message.content
+            message_text = embed.description or ""
         else:
             message_text = message.content
 
-        # Keyword check (make this configurable?)
+        # Check if this is a purchase notification
         if "[PURCHASE INFO]" not in message_text:
-             # If not the expected purchase format, process regular commands if any
-             await bot.process_commands(message)
-             return # Stop webhook processing
+            return
 
-        logger.info("Processing potential purchase webhook...")
+        logger.info("Processing purchase webhook...")
         
-        logger.info(f"📨 Webhook raw message content: {message_text[:200]}...")
-
         try:
-            # Use regex to extract info - more robust than splitting
-            name_pattern = r"(?:Name|Item|Product):\s*\*?\*?(?P<name>[a-zA-Z0-9_]+)\*?\*?"
-            amount_pattern = r"(?:Amount|Quantity|Qty|Count):\s*\*?\*?(?P<amount>\d+)\*?\*?"
-            profit_pattern = r"(?:Profit|Price|Total|Cost):\s*\*?\*?\$?(?P<profit>[\d,]+(?:\.\d+)?)\*?\*?"
-
-            name_match = re.search(name_pattern, message_text, re.IGNORECASE)
-            amount_match = re.search(amount_pattern, message_text, re.IGNORECASE)
-            profit_match = re.search(profit_pattern, message_text, re.IGNORECASE)
-
-            item_name_internal = None
-            quantity = None
-            sale_price = None # Sale price per item
-
-            if name_match:
-                 item_name_internal = name_match.group("name").lower().strip()
-                 # Further validation if needed (e.g., ensure it's a known item type)
-                 if not shop_data.is_valid_item(item_name_internal):
-                      logger.warning(f"Webhook item name '{item_name_internal}' is not a valid known item.")
-                      # Decide: react error, ignore, or attempt fuzzy match? For now, let process_sale handle it.
-                      pass # Let process_sale fail if invalid
-
-            if amount_match:
-                 try: quantity = int(amount_match.group("amount"))
-                 except ValueError: logger.error("Webhook parsing: Invalid amount format.")
-            if profit_match:
-                 try:
-                      profit_str = profit_match.group("profit").replace(',', '')
-                      total_profit = float(profit_str)
-                      # Calculate price per item if quantity is known
-                      if quantity and quantity > 0:
-                           sale_price = int(total_profit / quantity)
-                      else: # Cannot determine price per item
-                           logger.warning("Webhook parsing: Cannot determine sale price per item (Amount missing or zero).")
-                 except ValueError: logger.error("Webhook parsing: Invalid profit format.")
-
-
-            # Check if all essential info was parsed
-            if item_name_internal and quantity and quantity > 0 and sale_price is not None:
-                display_name = shop_data.display_names.get(item_name_internal, item_name_internal)
-                logger.info(f"📦 Parsed webhook sale: {quantity}x {display_name} ({item_name_internal}) for total profit ${total_profit:,.2f} (~${sale_price:,} each)")
-
-                success = await process_sale(item_name_internal, quantity, sale_price)
-
-                if success:
-                    await message.add_reaction("✅") # Success reaction
-                else:
-                    await message.add_reaction("❌") # Failure reaction (e.g., insufficient stock)
+            # Extract sale details using regex
+            item_pattern = re.search(r"Name: ([a-z_]+)", message_text, re.IGNORECASE)
+            amount_pattern = re.search(r"Amount: (\d+)", message_text, re.IGNORECASE)
+            profit_pattern = re.search(r"Profit: \$?([\d,]+)", message_text, re.IGNORECASE)
+            
+            if not (item_pattern and amount_pattern and profit_pattern):
+                logger.warning(f"Could not extract all sale details from webhook message: {message_text[:200]}...")
+                return
+                
+            item_name = item_pattern.group(1).lower()
+            quantity = int(amount_pattern.group(1))
+            
+            # Handle commas in profit number
+            profit_str = profit_pattern.group(1).replace(",", "")
+            total_profit = int(profit_str)
+            
+            # Calculate price per item
+            sale_price_per_item = total_profit // quantity
+            
+            logger.info(f"Parsed sale: {quantity}x {item_name} for ${total_profit:,} (${sale_price_per_item:,} each)")
+            
+            # Process the sale with the actual sale price from webhook
+            success = await process_sale(item_name, quantity, sale_price_per_item)
+            
+            if success:
+                logger.info(f"✅ Successfully processed webhook sale of {quantity}x {item_name}")
             else:
-                # Log specific missing fields
-                missing = []
-                if not item_name_internal: missing.append("Item Name")
-                if not quantity or quantity <= 0: missing.append("Valid Amount")
-                if sale_price is None: missing.append("Price (derived from Profit/Amount)")
-                logger.error(f"❌ Webhook parsing failed. Missing fields: {', '.join(missing)}. Raw text snippet:\n{message_text[:300]}...")
-                await message.add_reaction("❓") # Parsing error reaction
-
+                logger.error(f"❌ Failed to process webhook sale of {quantity}x {item_name}")
+                
         except Exception as e:
-            logger.error(f"❌ Error processing webhook message: {e}\n{traceback.format_exc()}")
-            await message.add_reaction("⚠️") # General error reaction
-
+            logger.error(f"Error processing webhook sale: {e}\n{traceback.format_exc()}")
+    
     else:
-        # If it's not a webhook message, process potential bot commands
+        # Process normal commands
         await bot.process_commands(message)
-
 
 @bot.event
 async def on_ready():
