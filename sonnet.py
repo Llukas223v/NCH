@@ -2438,7 +2438,7 @@ async def update_stock_message() -> None:
                     display_name = shop_data.display_names.get(item_name, item_name)
                     low_threshold = shop_data.low_stock_thresholds.get(category, 0)
 
-                    warning = ""
+                    # REVISED: Make sure warning is always set to something, even if threshold is 0
                     if low_threshold > 0:
                         if total_quantity <= low_threshold: 
                             warning = "⚠️" # Add warning symbol for low stock
@@ -2446,13 +2446,16 @@ async def update_stock_message() -> None:
                             warning = "📈" # Add high stock indicator
                         else:
                             warning = "✅" # Add checkmark for normal stock level
+                    else:
+                        warning = "✅" # Default to checkmark if no threshold is set
+
+                    logger.debug(f"Item: {item_name}, Qty: {total_quantity}, Low threshold: {low_threshold}, Status: {warning}")
 
                     formatted_price = f"${price:,}" if price else "N/A"
                     formatted_value = f"${item_value:,}" if price else "N/A"
                     # Ensure alignment with potentially shorter/longer names
                     item_line = f"{display_name[:18]:<18} {total_quantity:>7,} {formatted_price:>9} {formatted_value:>11} {warning}\n"
                     item_lines.append(item_line)
-                logger.debug(f"Added {item_name} value: {item_value}, category_value now: {category_value}")
 
             if not has_items:
                 category_block += "-- No stock in this category --\n"
