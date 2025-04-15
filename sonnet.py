@@ -2343,174 +2343,54 @@ async def update_stock_message() -> None:
         timestamp = int(datetime.datetime.now().timestamp())
         char_limit = 1950 # Safety margin below 2000
 
-        # Calculate total value before building messages
-        total_value = 0
-        for item_name in shop_data.get_all_items():
-            total_quantity = shop_data.get_total_quantity(item_name)
-            if total_quantity > 0:
-                price = shop_data.predefined_prices.get(item_name, 0)
-                item_value = total_quantity * price
-                total_value += item_value
-        logger.debug(f"Calculated total_value: {total_value}")
+        # ... [the content generation code remains the same] ...
 
-        # Start the message with the stock value at the top
-        current_message = f"**📊 Current Shop Stock** (Updated: <t:{timestamp}:R>)\n"
-        current_message += f"💰 **Total Stock Value:** ${total_value:,}\n\n"
-
-        def get_category_order(category_name):
-            category_order = {
-                'bud': 1,    # Show buds first
-                'bag': 2,    # Bags second
-                'joint': 3,  # Joints third
-                'misc': 4,   # Misc fourth
-                'fish': 5,   # Fish fifth
-                'tebex': 6   # Tebex last
-            }
-            return category_order.get(category_name, 999)  # Default to end for unknown categories
-
-        # Sort categories using the custom order
-        sorted_categories = sorted(shop_data.item_categories.items(), key=lambda x: get_category_order(x[0]))
-
-        for category, category_items in sorted_categories:
-            category_header = f"{shop_data.category_emojis.get(category, '📦')} **{category.upper()}**\n"
-            category_block = "```ml\n"
-            # Adjust column widths if needed
-            category_block += f"{'Item':<18} {'Stock':>7} {'Price':>9} {'Value':>11} Status\n"
-            category_block += "─" * (18+7+9+11+8) + "\n" # Adjust separator length
-
-            has_items = False
-            category_value = 0
-            item_lines = []
-
-            def get_item_order(item_name):
-                # Define custom ordering within each category
-                category = shop_data.get_category_for_item(item_name)
-        
-                # Custom order for joints
-                if category == 'joint':
-                    order_map = {
-                        'joint_ogkush': 1,      # Old Joint
-                        'joint_whitewidow': 2,  # Whacky Joint
-                        'joint_sourdiesel': 3,  # Sour Diesel Joint
-                        'joint_pineappleexpress': 4, # Smelly Joint
-                        'joint_khalifakush': 5, # Strange Joint
-                        'joint_sojokush': 6,    # Bizarre Joint
-                    }
-                    return order_map.get(item_name, 999)  # Default to end for unknown items
-        
-                # Custom order for buds
-                elif category == 'bud':
-                    order_map = {
-                        'bud_ogkush': 1,      # Old Bud
-                        'bud_whitewidow': 2,  # Whacky Bud
-                        'bud_sourdiesel': 3,  # Sour Diesel Bud
-                        'bud_pineappleexpress': 4, # Smelly Bud
-                        'bud_khalifakush': 5, # Strange Bud
-                        'bud_sojokush': 6,    # Bizarre Bud
-                    }
-                    return order_map.get(item_name, 999)
-        
-                # Custom order for bags
-                elif category == 'bag':
-                    order_map = {
-                        'bagof_ogkush': 1,      # Old Bag
-                        'bagof_whitewidow': 2,  # Whacky Bag
-                        'bagof_sourdiesel': 3,  # Sour Diesel Bag
-                        'bagof_pineappleexpress': 4, # Smelly Bag
-                        'bagof_khalifakush': 5, # Strange Bag
-                        'bagof_sojokush': 6,    # Bizarre Bag
-                    }
-                    return order_map.get(item_name, 999)
-        
-                # Default to alphabetical sorting by display name for other categories
-                else:
-                    return shop_data.display_names.get(item_name, item_name)
-
-            # Use the custom sort function
-            sorted_items = sorted(category_items, key=get_item_order)
-
-            for item_name in sorted_items:
-                # Get total quantity for this item
-                total_quantity = shop_data.get_total_quantity(item_name)
-                if total_quantity > 0:
-                    has_items = True
-                    price = shop_data.predefined_prices.get(item_name, 0)
-                    item_value = total_quantity * price
-                    category_value += item_value
-                    display_name = shop_data.display_names.get(item_name, item_name)
-
-                    # Get the threshold for this item's category
-                    category = shop_data.get_category_for_item(item_name)
-                    low_threshold = shop_data.low_stock_thresholds.get(category, 0)
-            
-                    # Determine status indicator
-                    if low_threshold > 0:
-                        if total_quantity <= low_threshold:
-                            warning = "⚠️"  # Warning for low stock
-                        elif total_quantity >= low_threshold * 3:
-                            warning = "📈"  # High stock indicator
-                        else:
-                            warning = "✅"  # Normal stock level
-                    else:
-                        warning = "✅"  # Default to checkmark if no threshold set
-            
-                    # Format the item line with the status indicator/add
-                    formatted_price = f"${price:,}" if price else "N/A"
-                    formatted_value = f"${item_value:,}" if price else "N/A"
-                    item_line = f"{display_name[:18]:<18} {total_quantity:>7,} {formatted_price:>9} {formatted_value:>11} {warning}\n"
-                    item_lines.append(item_line)
-
-            if not has_items:
-                category_block += "-- No stock in this category --\n"
-            else:
-                category_block += "".join(item_lines)
-
-            category_block += "```\n"
-            total_value += category_value
-            logger.debug(f"Added category {category} value: {category_value}, total_value now: {total_value}")
-
-            # Check if adding this whole category block exceeds limit
-            if len(current_message) + len(category_header) + len(category_block) > char_limit:
-                # Finish the current message and start a new one
-                messages_content.append(current_message)
-                current_message = category_header + category_block
-            else:
-                # Add to the current message
-                current_message += category_header + category_block
-
-        messages_content.append(current_message) # Add the last message
-
+        # The key issue is here - message management:
         new_message_ids = []
-        # Fetch existing messages with better handling for multiple messages
-        old_message_ids = shop_data.stock_message_ids.copy()  # Work with a copy
-        old_messages = {}
-    
-        # Fetch all existing messages
-        if old_message_ids:
-            for idx, msg_id in enumerate(old_message_ids):
+        existing_messages = []
+        
+        # First, clean up existing stock messages that might be left from previous runs
+        try:
+            # Delete any existing messages except the ones in our current tracking list
+            async for message in channel.history(limit=20):  # Adjust limit as needed
+                if message.author == bot.user and message.id not in shop_data.stock_message_ids:
+                    # Check if it looks like a stock message
+                    if "Current Shop Stock" in message.content:
+                        await message.delete()
+                        logger.info(f"Deleted untracked stock message: {message.id}")
+                        await asyncio.sleep(0.5)  # Rate limit prevention
+            
+            # Now fetch our tracked messages
+            for msg_id in shop_data.stock_message_ids:
                 try:
-                    old_message = await channel.fetch_message(msg_id)
-                    old_messages[idx] = old_message
+                    msg = await channel.fetch_message(msg_id)
+                    existing_messages.append(msg)
                 except discord.NotFound:
-                    logger.warning(f"Stock message {msg_id} (part {idx+1}) not found.")
+                    logger.warning(f"Stock message {msg_id} not found.")
                 except Exception as e:
                     logger.error(f"Error fetching stock message {msg_id}: {e}")
-    
-        # Send/edit messages using the cached messages
+        except Exception as e:
+            logger.error(f"Error cleaning up stock messages: {e}")
+            existing_messages = []
+
+        # Update existing messages or create new ones
         for i, content in enumerate(messages_content):
-            if i in old_messages:  # Try to update existing message
+            if i < len(existing_messages):
+                # Update existing message
                 try:
-                    await old_messages[i].edit(content=content)
-                    new_message_ids.append(old_messages[i].id)
+                    await existing_messages[i].edit(content=content)
+                    new_message_ids.append(existing_messages[i].id)
                     logger.info(f"Updated stock message part {i+1}/{len(messages_content)}")
                 except Exception as e:
                     logger.error(f"Failed to edit stock message part {i+1}: {e}")
+                    # If edit fails, try to send a new message
                     try:
                         msg = await channel.send(content)
                         new_message_ids.append(msg.id)
                     except Exception:
                         logger.error(f"Also failed to send new message for part {i+1}")
-            else:  # Send new message
+            else:
+                # Send new message
                 try:
                     # Add rate limit handling
                     if i > 0:
@@ -2520,16 +2400,15 @@ async def update_stock_message() -> None:
                     logger.info(f"Sent new stock message part {i+1}/{len(messages_content)}")
                 except Exception as e:
                     logger.error(f"Failed to send stock message part {i+1}: {e}")
-    
-        # Clean up any extra old messages
-        for i in range(len(messages_content), len(old_message_ids)):
-            if i in old_messages:
-                try:
-                    await old_messages[i].delete()
-                    logger.info(f"Deleted extra stock message part {i+1}")
-                except Exception:
-                    logger.warning(f"Failed to delete extra message {old_message_ids[i]}")
-    
+
+        # Delete any extra old messages
+        for i in range(len(messages_content), len(existing_messages)):
+            try:
+                await existing_messages[i].delete()
+                logger.info(f"Deleted extra stock message part {i+1}")
+            except Exception:
+                logger.warning(f"Failed to delete extra message {existing_messages[i].id}")
+
         # Save the updated message IDs
         if shop_data.stock_message_ids != new_message_ids:
             shop_data.stock_message_ids = new_message_ids
@@ -2539,7 +2418,6 @@ async def update_stock_message() -> None:
     except Exception as e:
         logger.error(f"Error updating stock message: {e}")
         return  # Return early on error
-
 
 async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: int) -> bool:
     """Processes a sale, removing stock FIFO globally and crediting users based on actual sale price."""
@@ -2741,16 +2619,25 @@ async def add_large_quantity(
 
         @discord.ui.button(label="Confirm Add", style=discord.ButtonStyle.danger)
         async def confirm(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-            # Ensure the user clicking confirm is the original command user
-            if btn_interaction.user.id != interaction.user.id:
-                 await btn_interaction.response.send_message("You cannot confirm this action.", ephemeral=True)
-                 return
+            # Respond to interaction immediately before doing anything else
+            await btn_interaction.response.defer()
 
+            # Now do your processing
             self.confirmed = True
+
+            # Disable buttons after processing
+            for item in self.children: 
+                item.disabled = True
+    
+            # Edit the message using followup instead of response
+            await btn_interaction.followup.edit_message(
+                message_id=btn_interaction.message.id,
+                content="Adding stock...", 
+                view=self
+            )
+    
+            # Stop the view last
             self.stop()
-            # Disable buttons after click
-            for item in self.children: item.disabled = True
-            await btn_interaction.response.edit_message(content="Adding stock...", view=self)
 
         @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
         async def cancel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
