@@ -2006,7 +2006,7 @@ class ShopData:
             'licenseplate': 'Custom Plate', 'tebex_carwax': 'Car Wax', 'tebex_xpbooster': 'XP Booster', 'tebex_crewleadership': 'Crew Leadership',
             'tebex_crewname': 'Crew Name', 'tebex_crewcolour': 'Crew Colour',
             'cookedmackerel': 'Cooked Mackerel', 'cookedbass': 'Cooked Bass', 'cookedsalmon': 'Cooked Salmon', 'cookedgrouper': 'Cooked Grouper',
-            'cookedpike': 'Cooked Pike', 'cookedcatfish': 'Cooked Catfish', 'cookedyellowfintuna': 'Cooked Yellowfin Tuna',
+            'cookedpike': 'Cooked Pike', 'catfishnuggets': 'Cooked Catfish', 'cookedyellowfintuna': 'Cooked Yellowfin Tuna',
             'makeshiftarmour': 'Makeshift Armour', 'rollingpaper': 'Rolling Paper'
         }
         self.predefined_prices = {
@@ -2014,8 +2014,8 @@ class ShopData:
             'bagof_ogkush': 35, 'bagof_whitewidow': 40, 'bagof_sourdiesel': 40, 'bagof_pineappleexpress': 43, 'bagof_khalifakush': 72, 'bagof_sojokush': 325, 
             'joint_ogkush': 30, 'joint_whitewidow': 30, 'joint_sourdiesel': 35, 'joint_pineappleexpress': 35, 'joint_khalifakush': 60, 'joint_sojokush': 125, 
             'tebex_vinplate': 350000, 'tebex_talentreset': 550000, 'tebex_deep_pockets': 950000,'tebex_crewleadership': 4000000,
-            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 'tebex_crewname': 1000000, 'tebex_crewcolour': 2500000,
-            'cookedmackerel': 500, 'cookedbass': 500, 'cookedgrouper': 500, 'cookedsalmon': 500, 'cookedpike': 750, 'cookedcatfish': 500, 'cookedyellowfintuna': 500,
+            'licenseplate': 535000, 'tebex_carwax': 595000, 'tebex_xpbooster': 1450000, 'tebex_crewname': 2500000, 'tebex_crewcolour': 1000000,
+            'cookedmackerel': 500, 'cookedbass': 500, 'cookedgrouper': 500, 'cookedsalmon': 500, 'cookedpike': 750, 'catfishnuggets': 500, 'cookedyellowfintuna': 500,
             'makeshiftarmour': 2750, 'rollingpaper': 20
         }
         self.item_categories = {
@@ -2023,7 +2023,7 @@ class ShopData:
             'bag': ['bagof_ogkush', 'bagof_whitewidow', 'bagof_sourdiesel', 'bagof_pineappleexpress', 'bagof_khalifakush', 'bagof_sojokush'],
             'joint': ['joint_ogkush', 'joint_whitewidow', 'joint_sourdiesel', 'joint_pineappleexpress', 'joint_khalifakush', 'joint_sojokush'],
             'tebex': ['tebex_vinplate', 'tebex_talentreset', 'tebex_deep_pockets', 'licenseplate', 'tebex_carwax', 'tebex_xpbooster', 'tebex_crewleadership', 'tebex_crewname', 'tebex_crewcolour'],
-            'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon', 'cookedgrouper', 'cookedpike', 'cookedcatfish', 'cookedyellowfintuna'],
+            'fish': ['cookedmackerel', 'cookedbass', 'cookedsalmon', 'cookedgrouper', 'cookedpike', 'catfishnuggets', 'cookedyellowfintuna'],
             'misc': ['makeshiftarmour', 'rollingpaper']
         }
 
@@ -2339,13 +2339,79 @@ async def update_stock_message() -> None:
         return
 
     try:
+        # First generate the content to display
         messages_content = []
         timestamp = int(datetime.datetime.now().timestamp())
-        char_limit = 1950 # Safety margin below 2000
+        char_limit = 1950  # Safety margin below 2000
 
-        # ... [the content generation code remains the same] ...
+        # Generate the message content
+        header = f"# 📊 Current Shop Stock <t:{timestamp}:R>\n\n"
+        current_message = header
 
-        # The key issue is here - message management:
+        # Process items by category
+        categories_with_stock = {}
+        for category, items in shop_data.item_categories.items():
+            category_content = ""
+            item_lines = []
+            category_value = 0
+            has_items = False
+            
+            # Sort items within category for consistent display
+            sorted_items = sorted(items, key=lambda x: shop_data.display_names.get(x, x))
+            
+            for item_name in sorted_items:
+                # No need to check shop_data.items - get_total_quantity handles it
+                total_quantity = shop_data.get_total_quantity(item_name)
+                if total_quantity > 0:
+                    has_items = True
+                    price = shop_data.predefined_prices.get(item_name, 0) # Use 0 if price somehow missing
+                    item_value = total_quantity * price
+                    category_value += item_value
+                    display_name = shop_data.display_names.get(item_name, item_name)
+                    low_threshold = shop_data.low_stock_thresholds.get(category, 0)
+                    
+                    # Determine warning symbol based on thresholds
+                    if low_threshold > 0:
+                        if total_quantity <= low_threshold:
+                            warning = "⚠️" # Warning for low stock
+                        elif total_quantity >= low_threshold * 3:
+                            warning = "📈" # High stock indicator
+                        else:
+                            warning = "✅" # Normal stock level
+                    else:
+                        warning = "✅" # Default to checkmark if no threshold set
+                    
+                    formatted_price = f"${price:,}" if price else "N/A"
+                    formatted_value = f"${item_value:,}" if price else "N/A"
+                    # Ensure alignment with potentially shorter/longer names
+                    item_line = f"{display_name[:18]:<18} {total_quantity:>7,} {formatted_price:>9} {formatted_value:>11} {warning}\n"
+                    item_lines.append(item_line)
+            
+            if has_items:
+                category_emoji = shop_data.category_emojis.get(category, "📦")  # Use emoji from config
+                category_header = f"## {category_emoji} {category.upper()} (Total Value: ${category_value:,})\n\n"
+                category_table_header = f"Item                Quantity    Price      Value       Status\n"
+                category_table_header += f"------------------ --------- --------- ----------- --------\n"
+                
+                category_content = category_header + category_table_header + "".join(item_lines) + "\n"
+                
+                # Check if adding this category would exceed message limit
+                if len(current_message + category_content) > char_limit:
+                    # Save current message and start a new one
+                    messages_content.append(current_message)
+                    current_message = header  # Start with header again
+                
+                current_message += category_content
+        
+        # Add the last message if not empty
+        if current_message != header:
+            messages_content.append(current_message)
+        
+        # If no content was generated, create a "no stock" message
+        if not messages_content:
+            messages_content = [header + "No items currently in stock."]
+
+        # Now handle message management
         new_message_ids = []
         existing_messages = []
         
@@ -2416,9 +2482,9 @@ async def update_stock_message() -> None:
             logger.info(f"📝 Updated stock message IDs: {new_message_ids}")
             
     except Exception as e:
-        logger.error(f"Error updating stock message: {e}")
+        logger.error(f"Error updating stock message: {e}\n{traceback.format_exc()}")
         return  # Return early on error
-
+    
 async def process_sale(item_name: str, quantity_sold: int, sale_price_per_item: int) -> bool:
     """Processes a sale, removing stock FIFO globally and crediting users based on actual sale price."""
     display_name = shop_data.display_names.get(item_name, item_name)
