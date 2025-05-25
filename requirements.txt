@@ -3,5 +3,5 @@ python-dotenv
 pymongo
 dnspython
 aiohttp
-PyNaCl
+PyNaCl>=1.4.0
 schedule
