@@ -1,7 +1,0 @@
-discord.py
-python-dotenv
-pymongo
-dnspython
-aiohttp
-PyNaCl
-schedule
