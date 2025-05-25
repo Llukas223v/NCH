@@ -12,7 +12,7 @@ import logging
 import asyncio
 from typing import Dict, List, Optional, Union, Any, Literal
 import traceback
-import nacl # Keep if future voice planned
+# import nacl # Keep if future voice planned
 import aiohttp # Keep if future direct http planned
 import re
 from pymongo import MongoClient
@@ -2308,8 +2308,8 @@ shop_data = ShopData()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-############### HELPER FUNCTIONS ###############
-
+################ HELPER FUNCTIONS ###############
+#ar
 async def is_admin(interaction: discord.Interaction) -> bool:
     """Checks if the interaction user has administrator permissions."""
     if not isinstance(interaction.user, discord.Member): # Check in DMs or user left?
