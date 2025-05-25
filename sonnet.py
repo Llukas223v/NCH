@@ -12,7 +12,10 @@ import logging
 import asyncio
 from typing import Dict, List, Optional, Union, Any, Literal
 import traceback
-# import nacl # Keep if future voice planned
+try:
+    import nacl  # Try to import but don't fail if missing
+except ImportError:
+    pass  # Skip if not available, voice features will be disabled
 import aiohttp # Keep if future direct http planned
 import re
 from pymongo import MongoClient
